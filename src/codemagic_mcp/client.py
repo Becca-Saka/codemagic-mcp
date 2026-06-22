@@ -52,6 +52,21 @@ class CmApiClient:
         all teams with names, in one call (the v3 /user hides the personal team id)."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/user")
 
+    async def get_build(self, build_id: str) -> Any:
+        """GET /builds/{build_id} (legacy) — returns {application, build}; the build
+        carries buildActions (per-step status + logUrl), config, commit, app/repo."""
+        return await self._request("GET", f"{LEGACY_BASE_URL}/builds/{build_id}")
+
+    async def get_step_log(self, log_url: str) -> str:
+        """Fetch a build step's raw log text from its (absolute) logUrl."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.get(log_url, headers=self._headers())
+            if response.status_code >= 400:
+                logger.warning("Codemagic log fetch error | status=%d | url=%s",
+                               response.status_code, log_url)
+                raise CmApiError(response.status_code, response.text)
+            return response.text
+
     async def get_team_builds(self, team_id: str, *, limit: int = 10) -> Any:
         """GET /teams/{team_id}/builds — recent builds for a team."""
         return await self._request(
