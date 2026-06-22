@@ -133,6 +133,109 @@ def step_records(build_payload: Any) -> list[dict[str, Any]]:
     return records
 
 
+def _team_id(owner_team: Any) -> Any:
+    return owner_team.get("_id") if isinstance(owner_team, dict) else owner_team
+
+
+def _repo(app: dict[str, Any]) -> str | None:
+    r = app.get("repository") or {}
+    return owner_repo(r.get("htmlUrl") or r.get("url"))
+
+
+def app_summary(app: Any) -> dict[str, Any]:
+    """Compact app row for listings (no env vars / secrets)."""
+    app = app if isinstance(app, dict) else {}
+    return {
+        "app_id": app.get("_id"),
+        "name": app.get("appName"),
+        "project_type": app.get("projectType"),
+        "config_source": app.get("settingsSource"),
+        "repo": _repo(app),
+        "team_id": _team_id(app.get("ownerTeam")),
+        "archived": app.get("archived"),
+    }
+
+
+def apps_list(apps_payload: Any) -> list[dict[str, Any]]:
+    apps = apps_payload.get("applications", apps_payload) if isinstance(apps_payload, dict) else apps_payload
+    return [app_summary(a) for a in apps or []]
+
+
+def _env_vars(env: Any) -> dict[str, Any]:
+    """Env var names/groups only — NEVER the values."""
+    if isinstance(env, dict):
+        variables, groups = env.get("variables") or [], env.get("groups") or []
+    elif isinstance(env, list):
+        variables, groups = env, []
+    else:
+        return {"variables": [], "groups": []}
+    return {
+        "variables": [
+            {"key": v.get("key"), "group": v.get("group"), "secure": v.get("secure")}
+            for v in variables if isinstance(v, dict)
+        ],
+        "groups": groups,
+    }
+
+
+_SAFE_PUBLISHER_FIELDS = ("recipients", "track", "customTrack", "channel", "submitAsDraft",
+                          "artifactType")
+
+
+def _publishers(publishers: Any) -> dict[str, Any]:
+    """Publisher targets with safe fields only — drop credentials/tokens."""
+    out: dict[str, Any] = {}
+    for name, cfg in (publishers or {}).items():
+        if not isinstance(cfg, dict):
+            continue
+        entry = {"enabled": cfg.get("enabled")}
+        for f in _SAFE_PUBLISHER_FIELDS:
+            if cfg.get(f) is not None:
+                entry[f] = cfg[f]
+        out[name] = entry
+    return out
+
+
+def _workflow(w: dict[str, Any]) -> dict[str, Any]:
+    cs = w.get("codeSigning") or {}
+    android, ios = cs.get("android") or {}, cs.get("ios") or {}
+    return {
+        "id": w.get("_id"),
+        "name": w.get("name"),
+        "instance_type": w.get("instanceType"),
+        "max_build_duration": w.get("maxBuildDuration"),
+        "branch_patterns": w.get("branchPatterns"),
+        "tag_patterns": w.get("tagPatterns"),
+        "build_settings": w.get("buildSettings"),
+        "scripts": w.get("customScripts"),
+        "code_signing": {
+            "android": {"enabled": android.get("enabled")},
+            "ios": {"bundle_id": ios.get("developerPortalBundleIdentifier")},
+        },
+        "publishers": _publishers(w.get("publishers")),
+        "cache": w.get("dependencyCache"),
+        "environment_variables": _env_vars(w.get("environmentVariables")),
+    }
+
+
+def app_detail(app_payload: Any) -> dict[str, Any]:
+    """Full app config for migration/grounding, with secrets redacted.
+
+    Keeps workflows, scripts, build settings, signing references, and publisher
+    targets; redacts env var values, signing passwords/keystores, and publisher
+    credentials.
+    """
+    app = app_payload.get("application", app_payload) if isinstance(app_payload, dict) else {}
+    workflows = app.get("workflows") or {}
+    return {
+        **app_summary(app),
+        "project_files": app.get("projectFiles"),
+        "branches": app.get("branches"),
+        "environment_variables": _env_vars(app.get("appEnvironmentVariables")),
+        "workflows": [_workflow(w) for w in workflows.values() if isinstance(w, dict)],
+    }
+
+
 def signing_summary(team_payload: Any) -> dict[str, Any]:
     """Redacted code-signing view from the legacy GET /team/{id} payload.
 

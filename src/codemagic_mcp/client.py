@@ -57,6 +57,14 @@ class CmApiClient:
         carries buildActions (per-step status + logUrl), config, commit, app/repo."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/builds/{build_id}")
 
+    async def list_applications(self) -> Any:
+        """GET /apps (legacy) — all apps the token can access."""
+        return await self._request("GET", f"{LEGACY_BASE_URL}/apps")
+
+    async def get_application(self, app_id: str) -> Any:
+        """GET /apps/{app_id} (legacy) — full app config (workflows, scripts, signing)."""
+        return await self._request("GET", f"{LEGACY_BASE_URL}/apps/{app_id}")
+
     async def get_team(self, team_id: str) -> Any:
         """GET /team/{team_id} (legacy) — team config incl. signingFiles + integrations."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/team/{team_id}")
