@@ -57,6 +57,10 @@ class CmApiClient:
         carries buildActions (per-step status + logUrl), config, commit, app/repo."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/builds/{build_id}")
 
+    async def get_team(self, team_id: str) -> Any:
+        """GET /team/{team_id} (legacy) — team config incl. signingFiles + integrations."""
+        return await self._request("GET", f"{LEGACY_BASE_URL}/team/{team_id}")
+
     async def get_step_log(self, log_url: str) -> str:
         """Fetch a build step's raw log text from its (absolute) logUrl."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

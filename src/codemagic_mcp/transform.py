@@ -133,6 +133,40 @@ def step_records(build_payload: Any) -> list[dict[str, Any]]:
     return records
 
 
+def signing_summary(team_payload: Any) -> dict[str, Any]:
+    """Redacted code-signing view from the legacy GET /team/{id} payload.
+
+    Strict allow-list: only non-secret descriptive fields. NEVER include certificate
+    passwords, serials, profile UUIDs, key data, or ASC key/issuer ids.
+    """
+    team = team_payload.get("team", team_payload) if isinstance(team_payload, dict) else {}
+    signing = team.get("signingFiles") or {}
+
+    def profile(p: dict[str, Any]) -> dict[str, Any]:
+        meta = p.get("meta") or {}
+        return {
+            "reference_name": p.get("referenceName"),
+            "valid": p.get("valid"),
+            "bundle_id": meta.get("bundleId") or meta.get("applicationIdentifier"),
+            "distribution_type": meta.get("distributionType"),
+            "name": meta.get("name"),
+            "expiration_date": meta.get("expirationDate"),
+            "xcode_managed": meta.get("xcodeManaged"),
+            "is_wildcard": meta.get("isWildcard"),
+        }
+
+    def named(item: dict[str, Any]) -> dict[str, Any]:
+        return {"reference_name": item.get("referenceName"), "valid": item.get("valid")}
+
+    asc = team.get("appStoreConnectIntegration") or {}
+    return {
+        "profiles": [profile(p) for p in signing.get("profiles") or []],
+        "certificates": [named(c) for c in signing.get("certificates") or []],
+        "keystores": [named(k) for k in signing.get("keystores") or []],
+        "asc_integrations": [k.get("name") for k in (asc.get("apiKeys") or []) if k.get("name")],
+    }
+
+
 def builds_list(team_builds_payload: Any) -> dict[str, Any]:
     """{builds, cursor} from the v3 GET /teams/{id}/builds payload."""
     if isinstance(team_builds_payload, dict):

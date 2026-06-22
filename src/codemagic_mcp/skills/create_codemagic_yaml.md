@@ -31,7 +31,9 @@ Confirm a detected value only if it's ambiguous (e.g. multiple schemes or flavor
 **Ask the user (decisions/secrets you can't infer):**
 - **Signing** — iOS/macOS: `automatic` (App Store Connect integration), `codemagic-managed` (certs
   uploaded in the Codemagic UI), `manual` (env var groups), or none. Android: keystore (env var group)
-  or none.
+  or none. If you know the team id, call `get_team_signing(team_id)` first: when a matching, valid
+  profile/certificate is already uploaded (check its `bundle_id` and `distribution_type`), reference it
+  by `reference_name` and just confirm the method — don't ask the user to set up signing from scratch.
 - **Distribution** — App Store Connect / Google Play (which track), Firebase App Distribution, email
   artifact, or none.
 - **Triggering** — events (push, pull_request, tag, or manual only) and which branches.

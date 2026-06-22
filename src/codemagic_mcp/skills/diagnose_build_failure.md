@@ -47,6 +47,11 @@ first; treat them as hypotheses until the evidence confirms one.
 | compile | compiler errors from Dart/Swift/Kotlin/Gradle, `error:` from the toolchain | repo (source/config) |
 | dependencies | pub/pod/gradle resolution conflicts, "version solving failed", "Could not find" | repo (dependency manifests) |
 | signing | `code signing`, `provisioning profile`, `certificate`, `codesign`, "No signing certificate" | account / Apple Developer portal — often **not** the repo |
+
+For a **signing** failure, call `get_team_signing(team_id)` (team_id is in `get_build_info`'s
+`app.team_id`) and compare what's uploaded against the build: is a matching profile/certificate
+present, is it `valid`, does the profile's `bundle_id` match the app's, and is the right
+`distribution_type` used? A missing, expired, or bundle-id-mismatched profile is a common root cause.
 | config | `codemagic.yaml` parse errors, unknown keys, invalid `instance_type` | repo yaml (`file`) or Workflow Editor (`ui`) |
 | integration / publishing | App Store Connect, Google Play, or webhook/publishing errors | account / external service |
 
