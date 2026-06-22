@@ -26,6 +26,19 @@ async def create_codemagic_yaml() -> str:
 
 
 @mcp.tool
+async def migrate_ui_to_yaml() -> str:
+    """REQUIRED FIRST STEP before migrating a Workflow Editor app to codemagic.yaml.
+
+    Call this BEFORE writing any yaml whenever the user wants to migrate, convert, or
+    move a Codemagic app from the UI / Workflow Editor settings to a codemagic.yaml.
+    Returns the playbook for reading the app's existing UI config with get_application
+    and translating it into an equivalent, validated yaml. Do NOT translate from
+    memory.
+    """
+    return load_skill("migrate_ui_to_yaml")
+
+
+@mcp.tool
 async def codemagic_yaml_reference(topic: str) -> str:
     """Get detailed reference notes for one part of a codemagic.yaml.
 

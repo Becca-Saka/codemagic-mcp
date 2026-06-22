@@ -13,8 +13,9 @@ they carry Codemagic-specific rules and grounding you would otherwise get wrong:
 
 - BEFORE investigating, diagnosing, or fixing a FAILED build, call
   `diagnose_build_failure` first and follow what it returns.
-- BEFORE creating, generating, or migrating a codemagic.yaml, call
-  `create_codemagic_yaml` first and follow it. While writing, pull
+- BEFORE creating or generating a codemagic.yaml, call `create_codemagic_yaml`
+  first and follow it. BEFORE migrating a Workflow Editor (UI) app to a
+  codemagic.yaml, call `migrate_ui_to_yaml` first. While writing, pull
   `codemagic_yaml_reference(topic)` for area-specific patterns, and ALWAYS run
   `validate_codemagic_yaml` before presenting the yaml.
 
