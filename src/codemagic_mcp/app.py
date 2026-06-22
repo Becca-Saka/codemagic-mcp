@@ -7,4 +7,18 @@ the tools package to pull those registrations in, then runs `mcp`.
 
 from fastmcp import FastMCP
 
-mcp = FastMCP("codemagic")
+INSTRUCTIONS = """\
+Codemagic CI/CD tools. Two tools return playbooks you must follow before acting —
+they carry Codemagic-specific rules and grounding you would otherwise get wrong:
+
+- BEFORE investigating, diagnosing, or fixing a FAILED build, call
+  `diagnose_build_failure` first and follow what it returns.
+- BEFORE creating, generating, or migrating a codemagic.yaml, call
+  `create_codemagic_yaml` first and follow it. While writing, pull
+  `codemagic_yaml_reference(topic)` for area-specific patterns, and ALWAYS run
+  `validate_codemagic_yaml` before presenting the yaml.
+
+Do not diagnose a build failure or write a codemagic.yaml from memory without these.\
+"""
+
+mcp = FastMCP("codemagic", instructions=INSTRUCTIONS)
