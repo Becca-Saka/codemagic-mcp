@@ -196,6 +196,26 @@ def _publishers(publishers: Any) -> dict[str, Any]:
     return out
 
 
+def _build_settings(bs: Any) -> dict[str, Any]:
+    """Build settings as-is (toolchain, platforms, build args, shorebird) minus the
+    shorebird storage token."""
+    if not isinstance(bs, dict):
+        return {}
+    settings = dict(bs)
+    shorebird = settings.get("shorebird")
+    if isinstance(shorebird, dict) and "token" in shorebird:
+        shorebird = {k: v for k, v in shorebird.items() if k != "token"}
+        settings["shorebird"] = shorebird
+    return settings
+
+
+def _active_test_runners(runners: Any) -> list[str]:
+    if not isinstance(runners, dict):
+        return []
+    return [name for name, cfg in runners.items()
+            if isinstance(cfg, dict) and cfg.get("active")]
+
+
 def _workflow(w: dict[str, Any]) -> dict[str, Any]:
     cs = w.get("codeSigning") or {}
     android, ios = cs.get("android") or {}, cs.get("ios") or {}
@@ -206,7 +226,8 @@ def _workflow(w: dict[str, Any]) -> dict[str, Any]:
         "max_build_duration": w.get("maxBuildDuration"),
         "branch_patterns": w.get("branchPatterns"),
         "tag_patterns": w.get("tagPatterns"),
-        "build_settings": w.get("buildSettings"),
+        "build_settings": _build_settings(w.get("buildSettings")),
+        "test_runners": _active_test_runners(w.get("testRunners")),
         "scripts": w.get("customScripts"),
         "code_signing": {
             "android": {"enabled": android.get("enabled")},
@@ -234,6 +255,73 @@ def app_detail(app_payload: Any) -> dict[str, Any]:
         "environment_variables": _env_vars(app.get("appEnvironmentVariables")),
         "workflows": [_workflow(w) for w in workflows.values() if isinstance(w, dict)],
     }
+
+
+def variable_groups(payload: Any) -> list[dict[str, Any]]:
+    """[{id, name}] from a v3 variable-groups payload (names only, no values)."""
+    data = payload.get("data", payload) if isinstance(payload, dict) else payload
+    return [{"id": g.get("id"), "name": g.get("name")} for g in data or [] if isinstance(g, dict)]
+
+
+def group_variables(payload: Any) -> list[dict[str, Any]]:
+    """[{name, secure}] from a v3 group-variables payload (keys only, no values)."""
+    data = payload.get("data", payload) if isinstance(payload, dict) else payload
+    return [{"name": v.get("name"), "secure": v.get("secure")}
+            for v in data or [] if isinstance(v, dict)]
+
+
+def team_variable_groups(team_payload: Any) -> list[dict[str, Any]]:
+    """Variable groups with their variable keys, from the legacy GET /team payload.
+
+    The team's environmentVariables block holds all groups + variables in one call.
+    Returns [{name, apps, variables: [{key, secure}]}] — keys only, never values.
+    """
+    team = team_payload.get("team", team_payload) if isinstance(team_payload, dict) else {}
+    env = team.get("environmentVariables") or {}
+    apps_by_group = env.get("apps") or {}
+    by_group: dict[str, list[dict[str, Any]]] = {}
+    for v in env.get("variables") or []:
+        if isinstance(v, dict) and v.get("group"):
+            by_group.setdefault(v["group"], []).append({"key": v.get("key"), "secure": v.get("secure")})
+    return [
+        {"name": g, "apps": apps_by_group.get(g, []), "variables": by_group.get(g, [])}
+        for g in env.get("groups") or []
+    ]
+
+
+def team_integrations(team_payload: Any) -> dict[str, Any]:
+    """Configured integrations from the legacy GET /team payload (names only).
+
+    Drops secret-ish ids (issuer/key/tenant/client ids); keeps the names the host
+    references in yaml (e.g. `integrations: app_store_connect: <name>`) + enabled flags.
+    """
+    team = team_payload.get("team", team_payload) if isinstance(team_payload, dict) else {}
+
+    def key_names(integration_key: str) -> list[str]:
+        keys = (team.get(integration_key) or {}).get("apiKeys") or []
+        return [k.get("name") for k in keys if isinstance(k, dict) and k.get("name")]
+
+    def conn(integration_key: str, label_field: str) -> dict[str, Any]:
+        i = team.get(integration_key) or {}
+        return {"enabled": i.get("isEnabled"), "account": i.get(label_field)}
+
+    return {
+        "app_store_connect": key_names("appStoreConnectIntegration"),
+        "partner_center": key_names("partnerCenterIntegration"),
+        "slack": {"enabled": (team.get("slackIntegration") or {}).get("isEnabled"),
+                  "workspace": (team.get("slackIntegration") or {}).get("workspace")},
+        "github": conn("githubAppIntegration", "login"),
+        "gitlab": conn("gitlabIntegration", "login"),
+        "bitbucket": conn("bitbucketIntegration", "login"),
+        "email": {"enabled": (team.get("emailIntegration") or {}).get("isEnabled")},
+    }
+
+
+def team_tester_groups(team_payload: Any) -> list[dict[str, Any]]:
+    """Tester groups [{name, device_count}] from the legacy GET /team payload."""
+    team = team_payload.get("team", team_payload) if isinstance(team_payload, dict) else {}
+    return [{"name": g.get("name"), "device_count": len(g.get("devices") or [])}
+            for g in team.get("testerGroups") or [] if isinstance(g, dict)]
 
 
 def signing_summary(team_payload: Any) -> dict[str, Any]:

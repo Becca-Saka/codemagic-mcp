@@ -7,6 +7,7 @@ YAML_REFERENCES = (
     "definitions-and-anchors",
     "build-versioning",
     "environment-and-cache",
+    "code-signing",
     "publishing",
     "triggering",
     "ota-updates",

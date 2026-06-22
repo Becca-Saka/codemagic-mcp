@@ -34,6 +34,8 @@ Confirm a detected value only if it's ambiguous (e.g. multiple schemes or flavor
   or none. If you know the team id, call `get_team_signing(team_id)` first: when a matching, valid
   profile/certificate is already uploaded (check its `bundle_id` and `distribution_type`), reference it
   by `reference_name` and just confirm the method — don't ask the user to set up signing from scratch.
+  Before writing any signing block, pull `codemagic_yaml_reference("code-signing")` — signing has strict
+  rules (e.g. never mix the `ios_signing` block with the App Store Connect integration method).
 - **Distribution** — App Store Connect / Google Play (which track), Firebase App Distribution, email
   artifact, or none.
 - **Triggering** — events (push, pull_request, tag, or manual only) and which branches.
@@ -69,6 +71,7 @@ the Codemagic-specific patterns rather than working from memory:
 - `definitions-and-anchors` — dedup shared blocks across multiple workflows.
 - `build-versioning` — auto build-number strategies (counters, store-latest+1, manual).
 - `environment-and-cache` — toolchain versions, env var groups, cache paths.
+- `code-signing` — iOS/macOS/Android signing methods and their do's & don'ts (read before any signing block).
 - `publishing` — App Store Connect, Google Play, Firebase, email/Slack.
 - `triggering` — events, branch/tag patterns, cancel-previous.
 - `ota-updates` — Shorebird (Flutter) and CodePush (React Native) over-the-air patches.

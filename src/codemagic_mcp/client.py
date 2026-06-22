@@ -69,6 +69,24 @@ class CmApiClient:
         """GET /team/{team_id} (legacy) — team config incl. signingFiles + integrations."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/team/{team_id}")
 
+    async def list_app_variable_groups(self, app_id: str) -> Any:
+        """GET /apps/{app_id}/variable-groups (v3) — env var group names for the app."""
+        return await self._request(
+            "GET", f"{V3_BASE_URL}/apps/{app_id}/variable-groups", params={"page_size": 100}
+        )
+
+    async def list_team_variable_groups(self, team_id: str) -> Any:
+        """GET /teams/{team_id}/variable-groups (v3) — env var group names for the team."""
+        return await self._request(
+            "GET", f"{V3_BASE_URL}/teams/{team_id}/variable-groups", params={"page_size": 100}
+        )
+
+    async def list_group_variables(self, group_id: str) -> Any:
+        """GET /variable-groups/{group_id}/variables (v3) — variable names in a group."""
+        return await self._request(
+            "GET", f"{V3_BASE_URL}/variable-groups/{group_id}/variables", params={"page_size": 100}
+        )
+
     async def get_step_log(self, log_url: str) -> str:
         """Fetch a build step's raw log text from its (absolute) logUrl."""
         async with httpx.AsyncClient(timeout=self.timeout) as client:

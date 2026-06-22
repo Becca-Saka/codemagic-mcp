@@ -27,3 +27,27 @@ async def get_team_signing(team_id: str) -> dict[str, Any]:
     except CmApiError as e:
         return {"error": e.message, "status_code": e.status_code, "team_id": team_id}
     return {"team_id": team_id, "signing": transform.signing_summary(payload)}
+
+
+@mcp.tool
+async def get_team_integrations(team_id: str) -> dict[str, Any]:
+    """List a team's configured integrations and tester groups.
+
+    Returns App Store Connect / Partner Center key names, Slack/GitHub/GitLab/
+    Bitbucket/email connection status, and tester groups. Use these when writing a
+    codemagic.yaml (e.g. `integrations: app_store_connect: <name>`) or distributing
+    to tester groups. Secret ids (issuer/key/tenant/client ids) are not returned.
+    """
+    try:
+        client = CmApiClient(require_token())
+    except AuthError as e:
+        return no_token(e)
+    try:
+        payload = await client.get_team(team_id)
+    except CmApiError as e:
+        return {"error": e.message, "status_code": e.status_code, "team_id": team_id}
+    return {
+        "team_id": team_id,
+        "integrations": transform.team_integrations(payload),
+        "tester_groups": transform.team_tester_groups(payload),
+    }
