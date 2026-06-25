@@ -1,5 +1,8 @@
 doc/
 .env
+.venv/
+__pycache__/
+*.pyc
 **/*.mcp.json
 .mcp.json
 **/.mcp.json
