@@ -98,6 +98,57 @@ publishing:
 Swap the `curl` target + payload for the chosen service (Teams/Google Chat/Discord take a JSON body to a
 webhook URL). Keep it as its own named step (don't fold it into the build steps).
 
+## Windows — Microsoft Store (Partner Center)
+```yaml
+publishing:
+  partner_center:
+    store_id: $MS_STORE_ID
+    tenant_id: $MS_TENANT_ID
+    client_id: $MS_CLIENT_ID
+    client_secret: $MS_CLIENT_SECRET
+```
+Store the four `MS_*` values in a secure group.
+
+## Unity — license + build + Steam
+> Docs: https://docs.codemagic.io/yaml-quick-start/building-a-unity-app/ ·
+> https://docs.codemagic.io/yaml-publishing/steam/
+
+Unity isn't Windows-specific — the same project builds Android / iOS / macOS / Windows. Three pieces:
+- **License (env group, Secure):** `UNITY_EMAIL`, `UNITY_SERIAL`, `UNITY_PASSWORD`. Activate at the start
+  of `scripts` with `Unity -batchmode -quit -logFile - -serial $UNITY_SERIAL -username $UNITY_EMAIL
+  -password $UNITY_PASSWORD`, and **return the license in a `publishing:` script** so it's released even
+  on failure: `Unity -batchmode -quit -returnlicense -username $UNITY_EMAIL -password $UNITY_PASSWORD`.
+- **Unity version:** pin it on macOS with `environment: unity: <version>` (e.g. `2021.3.6f1`) — Codemagic
+  installs it and sets `$UNITY_HOME`. For other platforms / extra modules, install via the Unity Hub CLI
+  (`Unity Hub -- --headless install --version $V --changeset $CS` then `install-modules … -m ios android`),
+  reading the version from `ProjectSettings/ProjectVersion.txt`.
+- **Build:** add static build methods in `Assets/Editor/Build.cs` (e.g. `BuildAndroid`/`BuildIos`/
+  `BuildMac`/`BuildWindows`) and run `Unity -batchmode -quit -projectPath . -executeMethod
+  Build.BuildAndroid -nographics`. Android emits an AAB; iOS exports an Xcode project you then build with
+  `xcode-project build-ipa`; Windows needs a **windows** instance.
+- **Distribution:** mobile/desktop targets use the normal blocks above (Google Play, App Store Connect,
+  email, …). For **Steam** (Codemagic's Steam guide covers Unity), there is no `publishing:` block —
+  deploy with a script.
+
+### Steam (script-based)
+- Secrets in a secure group: `STEAM_USERNAME`, `STEAM_PASSWORD`, `SSFN_FILE_NAME`, `SSFN_FILE` (base64
+  sentry file), `CONFIG_FILE` (base64 `config.vdf`). The SSFN + config sentry files let `steamcmd` skip
+  Steam Guard.
+- Commit the Steam build scripts: `steam/app_build.vdf` (AppID / DepotID / branch / content root) and
+  `steam/depot_build.vdf` (local-file → depot mapping).
+- Decode the sentry/config files into Steam's dir, then run:
+  `~/Steam/steamcmd.sh +login $STEAM_USERNAME $STEAM_PASSWORD +run_app_build <repo>/steam/app_build.vdf +quit`.
+
+## Web & script-based targets (no `publishing:` block — deploy from a script)
+These have no built-in `publishing:` key; add a deploy **script** step (store creds as secure env vars,
+add them to the runnable-setup checklist), and confirm the exact CLI against the docs:
+- **Firebase Hosting** — `firebase deploy --only hosting --token $FIREBASE_TOKEN` (or a service account).
+- **Cloudflare Pages** — `wrangler pages deploy <dir>` with `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`.
+- **GitHub Releases** — `gh release create` / the Codemagic `github` CLI with `GITHUB_TOKEN`.
+- **Codemagic static pages** — host the web build artifact on Codemagic; no extra credentials.
+- **Huawei AppGallery** — Fastlane AppGallery plugin with `HUAWEI_CLIENT_ID` / `HUAWEI_CLIENT_SECRET` /
+  `HUAWEI_APP_ID`.
+
 ## Others
-Also supported: GitHub releases, Microsoft Store, Huawei AppGallery, Amazon S3, Google Cloud Storage,
-Cloudflare Pages, pub.dev, Steam. Confirm each target's exact keys against its docs page.
+Also supported: Amazon S3, Google Cloud Storage, pub.dev. Confirm each target's exact keys against its
+docs page.

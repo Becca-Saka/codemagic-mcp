@@ -68,15 +68,29 @@ Only do this with the user's go-ahead (it writes to their account), and prefer a
   - **iOS/macOS signing** — three methods (pick one), or none: **ASC** (automatic — App Store Connect
     API integration fetches certs/profiles), **upload** (certs/profiles uploaded to Codemagic, referenced
     by name), or **envs** (base64 `.p12`/profile in a secure env var group).
-  - **Android signing** — keystore (env var group / uploaded), or none.
+  - **Android signing** — two methods (pick one), or none: **upload** (keystore uploaded to Codemagic,
+    referenced by name via `android_signing: [<keystore_reference>]`; Codemagic injects `CM_KEYSTORE_*`),
+    or **envs** (base64 keystore + passwords in a secure env var group). Always offer **both** — never
+    drop the upload option.
   Call `get_team_signing(team_id)` first: when a matching, valid profile/certificate/keystore is already
   uploaded (check its `bundle_id` and `distribution_type`), prefer the **upload** method and reference it
   by `reference_name` — don't ask the user to set up signing from scratch.
   Before writing any signing block, pull `codemagic_yaml_reference("code-signing")` — signing has strict
   rules (e.g. never mix the `ios_signing` block with the App Store Connect integration method).
-- **Distribution** — App Store Connect / Google Play (which track), Firebase App Distribution, email
-  artifact, or none. For App Store Connect, confirm the exact **integration name** from
-  `get_team_integrations`; if missing, ask — never invent it.
+- **Distribution — ask PER PLATFORM the app targets** (a separate question each; never one combined
+  "distribution" question), each with its real targets, or none:
+  - **iOS/macOS** → App Store Connect (TestFlight / App Store), ad-hoc, enterprise, Firebase App
+    Distribution, or none. For App Store Connect confirm the exact **integration name** from
+    `get_team_integrations`; if missing, ask — never invent it.
+  - **Android** → Google Play (which track: internal/alpha/beta/production), Firebase App Distribution,
+    Huawei AppGallery, GitHub Releases, raw APK/AAB artifact, or none.
+  - **Web** → Firebase Hosting, Cloudflare Pages, GitHub Releases, Codemagic static pages, or none.
+  - **Windows / desktop** → Microsoft Store (Partner Center), or none.
+  - **Unity games** → Steam, or the normal store for the built platform (Google Play / App Store), or
+    none. Unity builds any of Android/iOS/macOS/Windows from one project; Steam is script-based — pull
+    the `publishing` reference's Unity section for the license + build + Steam steps.
+  Email artifacts is a notification choice (below), not a per-platform distribution. Pull
+  `codemagic_yaml_reference("publishing")` for the exact block/script + env vars of the chosen target.
 - **Triggering** — events (push, pull_request, tag, or manual only) and which branches. If they want
   tag builds, **ask for the actual tag pattern** (e.g. `v*`, `release-*`) — don't default to a guess.
 - **Build versioning** — auto-version store uploads, and the strategy.
@@ -94,8 +108,8 @@ Ask these in one round, but as **separate, distinct questions, each with its own
 round" means one batch of questions, not one summarized question.
 
 **Each question's options must be the literal enumerated choices for that ONE decision** — exactly the
-options listed above (e.g. iOS signing → `ASC` / `upload` / `envs` / `none`; Android signing → `keystore`
-/ `none`; distribution → `App Store Connect` / `Google Play` / `Firebase` / `email` / `none`). Do NOT:
+options listed above (e.g. iOS signing → `ASC` / `upload` / `envs` / `none`; Android signing → `upload`
+/ `envs` / `none`; distribution → `App Store Connect` / `Google Play` / `Firebase` / `none`). Do NOT:
 - invent **bundled "scenario" presets** that fold several decisions into one option (e.g. "Full signing +
   store upload", "None / unsigned", "Email artifacts only") — these hide the real choices and the user
   can't pick a method;
@@ -115,8 +129,23 @@ Present each decision on its own with its real options so the user picks each on
 ### 3. Write the yaml
 - One workflow per build target unless the user wants a single combined one. Give each a clear `name`
   and an appropriate `instance_type`.
-- Per workflow set `environment` (toolchain versions, environment variable `groups`, `vars`), `scripts`
-  (build steps), `artifacts`, and `publishing`.
+- **`instance_type`** — pick by platform family: iOS/macOS → a **mac** instance, Windows → **windows**,
+  Android/web/everything else → **linux**; a combined workflow that includes iOS/macOS must use a mac
+  instance. Only use a value from the supported list, and remember some machines are gated by the team's
+  plan — pull `codemagic_yaml_reference("instance-types")` for the exact supported values, the safe
+  defaults (`mac_mini_m2` / `linux_x2` / `windows_x2`), and which are removed/plan-gated. Don't emit a
+  deprecated machine (e.g. `mac_mini`, `mac_mini_m1`).
+- Per workflow set the core keys: `environment` (toolchain versions, environment variable `groups`,
+  `vars`), `scripts` (build steps), `artifacts`, and `publishing`.
+- **Optional workflow keys** — `max_build_duration` (minutes; default ~60) and `labels`.
+- **`pre_clone_scripts`** — use only for steps that must run **before** the repo is cloned (e.g.
+  injecting an SSH key / netrc for private submodules); all normal setup goes in `scripts`.
+- **Build command specifics** — match the detected platform/flavor and the user's choices:
+  - Android output: `flutter build apk` (APK, default) vs `flutter build appbundle` (AAB, for Play
+    store uploads) — pick the one the chosen distribution needs, and set the matching `artifacts` glob
+    (`**/*.apk` vs `**/*.aab`).
+  - Carry any flavor through (`--flavor <name>` / the Android variant task / the iOS scheme), and append
+    user-supplied extra build args verbatim.
 - **Scripts — one logical action per step, each with a `name`.** Split the build into separate named
   `scripts` steps (e.g. install dependencies, set up signing, build, test) instead of cramming several
   commands into one `script: |` block. Separate steps give readable per-step logs and pinpoint which
@@ -139,6 +168,7 @@ the Codemagic-specific patterns rather than working from memory:
 - `triggering` — events, branch/tag patterns, cancel-previous.
 - `ota-updates` — Shorebird (Flutter) and CodePush (React Native) over-the-air patches.
 - `flavors` — detecting build variants per project type and writing one workflow per flavor.
+- `instance-types` — supported build machines, safe defaults, and which are plan-gated/removed.
 
 ### 4. Validate — always
 - Call `validate_codemagic_yaml` on the full content.

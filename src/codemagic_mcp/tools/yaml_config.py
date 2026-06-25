@@ -45,7 +45,7 @@ async def codemagic_yaml_reference(topic: str) -> str:
     Call this while writing a codemagic.yaml to get the Codemagic-specific patterns
     for an area before writing that section. Topics: definitions-and-anchors,
     build-versioning, environment-and-cache, code-signing, publishing, triggering,
-    ota-updates, flavors.
+    ota-updates, flavors, instance-types.
     """
     try:
         return load_reference(topic)

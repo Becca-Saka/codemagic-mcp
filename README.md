@@ -214,7 +214,7 @@ call `verify_connection` and return your user and teams. If it reports
 | `create_variable_group` | Create an environment variable group on an app or a team. |
 | `update_variable_group` | Rename a group or change which apps may read it (advanced security). |
 | `delete_variable_group` | Delete a variable group and all the variables in it. |
-| `add_environment_variables` | Add environment variables to an existing variable group. |
+| `add_environment_variables` | Add variables to a group — inline for non-secrets, or from a local file the server reads (so secret values never enter the chat). |
 | `update_environment_variable` | Update a single variable's value, name, or secure flag. |
 | `delete_environment_variable` | Delete a single environment variable from a group. |
 
@@ -243,3 +243,7 @@ call `verify_connection` and return your user and teams. If it reports
 Treat your API token like a password. Prefer per-user config files outside version
 control over committing it. The repo's `.gitignore` excludes `.env` and `.mcp.json`
 to help avoid leaking it.
+
+When uploading secret environment variables, pass `add_environment_variables` a
+**file path** rather than inline values — the server reads the file directly, so the
+secrets are never echoed into the conversation or model context.

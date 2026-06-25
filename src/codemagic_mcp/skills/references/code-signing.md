@@ -154,11 +154,26 @@ For simulator-only test builds, skip signing entirely:
 (artifact is an unsigned `.app`, not an `.ipa`).
 
 ## Other frameworks
-The iOS/Android/macOS blocks above are the same regardless of framework — only the **build command**
-differs. So:
-- **React Native / Flutter / Unity / .NET MAUI → iOS or Android**: use the matching iOS/Android section.
-- **Unity** also needs a license group: `UNITY_EMAIL`, `UNITY_SERIAL`, `UNITY_PASSWORD` (Secret).
-- **Windows (MSIX / Microsoft Store)**: package with the `msix` config; store creds in a group
+
+### Unity (incl. VR / Oculus / Meta Quest)
+Unity signs differently from the Gradle/Xcode defaults — the engine, not the build tool, applies signing:
+- **License group (Secret):** `UNITY_EMAIL`, `UNITY_SERIAL`, `UNITY_PASSWORD`. (Build + license activate/
+  return live in the `publishing` reference's Unity section.)
+- **Android (and Oculus/Quest, which is a Unity Android build):** still reference the uploaded keystore via
+  the `android_signing` block — Codemagic injects `CM_KEYSTORE_PATH` / `CM_KEYSTORE_PASSWORD` /
+  `CM_KEY_ALIAS` / `CM_KEY_PASSWORD`. But Unity ignores Gradle's signing config, so your
+  `Assets/Editor/Build.cs` must read those `CM_*` vars and set `PlayerSettings.Android.keystoreName` /
+  `keystorePass` / `keyaliasName` / `keyaliasPass` programmatically. (Oculus distributes via the Oculus
+  Platform Utility CLI with `OCULUS_APP_ID` + `OCULUS_APP_SECRET`/`OCULUS_USER_TOKEN`, not a `publishing:`
+  block.)
+- **iOS:** Unity exports an Xcode project; sign it with any of the three iOS methods above **after** the
+  export (run `xcode-project use-profiles` on the exported project).
+
+### Windows
+- **MSIX / Microsoft Store:** package with the `msix` config; store creds in a group
   (`MS_STORE_ID`, `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CLIENT_SECRET`). See the publishing docs.
+
+For most frameworks the iOS/Android/macOS blocks above are identical — only the **build command** differs:
+- **React Native / Flutter / .NET MAUI → iOS or Android**: use the matching iOS/Android section as-is.
 
 Confirm exact keys/flags against the docs and the official sample projects before committing.

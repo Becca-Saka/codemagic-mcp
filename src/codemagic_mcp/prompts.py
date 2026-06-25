@@ -12,6 +12,7 @@ YAML_REFERENCES = (
     "triggering",
     "ota-updates",
     "flavors",
+    "instance-types",
 )
 
 
