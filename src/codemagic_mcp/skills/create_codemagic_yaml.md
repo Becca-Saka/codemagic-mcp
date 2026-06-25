@@ -63,12 +63,15 @@ Only do this with the user's go-ahead (it writes to their account), and prefer a
 `list_variable_groups` already returns a suitable one.
 
 **Ask the user (decisions/secrets you can't infer or look up):**
-- **Signing** — iOS/macOS has three methods (pick one): **ASC** (automatic — App Store Connect API
-  integration fetches certs/profiles), **upload** (certs/profiles uploaded to Codemagic, referenced by
-  name), or **envs** (base64 `.p12`/profile in a secure env var group); or none. Android: keystore
-  (env var group / uploaded) or none. Call `get_team_signing(team_id)` first: when a matching, valid
-  profile/certificate is already uploaded (check its `bundle_id` and `distribution_type`), prefer the
-  **upload** method and reference it by `reference_name` — don't ask the user to set up signing from scratch.
+- **Signing — ask iOS/macOS and Android as SEPARATE questions** (never merge them into one "signing"
+  question); ask each only for the platforms the app actually targets.
+  - **iOS/macOS signing** — three methods (pick one), or none: **ASC** (automatic — App Store Connect
+    API integration fetches certs/profiles), **upload** (certs/profiles uploaded to Codemagic, referenced
+    by name), or **envs** (base64 `.p12`/profile in a secure env var group).
+  - **Android signing** — keystore (env var group / uploaded), or none.
+  Call `get_team_signing(team_id)` first: when a matching, valid profile/certificate/keystore is already
+  uploaded (check its `bundle_id` and `distribution_type`), prefer the **upload** method and reference it
+  by `reference_name` — don't ask the user to set up signing from scratch.
   Before writing any signing block, pull `codemagic_yaml_reference("code-signing")` — signing has strict
   rules (e.g. never mix the `ios_signing` block with the App Store Connect integration method).
 - **Distribution** — App Store Connect / Google Play (which track), Firebase App Distribution, email
@@ -77,11 +80,28 @@ Only do this with the user's go-ahead (it writes to their account), and prefer a
 - **Triggering** — events (push, pull_request, tag, or manual only) and which branches. If they want
   tag builds, **ask for the actual tag pattern** (e.g. `v*`, `release-*`) — don't default to a guess.
 - **Build versioning** — auto-version store uploads, and the strategy.
-- **Notifications** — email addresses, Slack channel.
+- **Notifications** — email, Slack, or another channel (Telegram, Microsoft Teams, Google Chat, Discord,
+  a generic webhook). Email and Slack have built-in `publishing:` blocks; for any other channel there is
+  no built-in block — you send it with a custom `publishing: scripts:` step. When the user picks one of
+  these, pull `codemagic_yaml_reference("publishing")` and follow the custom-notification steps (store the
+  webhook/token as a secure env var, mark build status, POST from a publishing script) — don't invent the
+  payload from memory.
 - **Workflows / flavors** — one combined workflow, or one per target; and if the flavor check above found
   variants, which flavor(s) to build. Include this in the same question round.
 
-Batch the questions you do need into one concise round — don't interrogate field by field.
+Ask these in one round, but as **separate, distinct questions, each with its own concrete options**
+(flavor, iOS signing, Android signing, distribution, triggering, etc. are individual questions). "One
+round" means one batch of questions, not one summarized question.
+
+**Each question's options must be the literal enumerated choices for that ONE decision** — exactly the
+options listed above (e.g. iOS signing → `ASC` / `upload` / `envs` / `none`; Android signing → `keystore`
+/ `none`; distribution → `App Store Connect` / `Google Play` / `Firebase` / `email` / `none`). Do NOT:
+- invent **bundled "scenario" presets** that fold several decisions into one option (e.g. "Full signing +
+  store upload", "None / unsigned", "Email artifacts only") — these hide the real choices and the user
+  can't pick a method;
+- **merge signing with distribution**, or **merge iOS with Android**, into a single question;
+- paraphrase or summarize the choices away.
+Present each decision on its own with its real options so the user picks each one explicitly.
 
 ### 2. Ground the structure — do not invent keys
 - The authoritative shape is the schema — **only use keys it defines**:
@@ -97,6 +117,11 @@ Batch the questions you do need into one concise round — don't interrogate fie
   and an appropriate `instance_type`.
 - Per workflow set `environment` (toolchain versions, environment variable `groups`, `vars`), `scripts`
   (build steps), `artifacts`, and `publishing`.
+- **Scripts — one logical action per step, each with a `name`.** Split the build into separate named
+  `scripts` steps (e.g. install dependencies, set up signing, build, test) instead of cramming several
+  commands into one `script: |` block. Separate steps give readable per-step logs and pinpoint which
+  stage failed. Keep multiple commands in a single step only when they're inherently one unit (a loop,
+  or a sequence that shares local shell state). This applies to every section, signing included.
 - **Code signing** — place it per the chosen method: an App Store Connect integration reference, an
   environment variable group holding the keystore/cert material, or codemagic-managed signing.
   Reference secrets through environment variable **groups** — never inline a secret value.
@@ -127,7 +152,25 @@ the Codemagic-specific patterns rather than working from memory:
   tools or got from the user. A `<placeholder>` is only acceptable for a value no tool exposes and the
   user genuinely hasn't decided yet; if any remain, list each one and where to set it in Codemagic
   (Team/App settings → environment variables / integrations), and offer to fill it once they provide it.
-- For any variable **group** the yaml references that doesn't exist yet, offer to create it and add the
-  variables now (`create_variable_group` + `add_environment_variables`) rather than only pointing at the
-  UI — so the build is runnable when they commit.
 - Keep it conversational: briefly explain the key choices, no walls of text.
+
+**Then help the user make it actually runnable** — don't stop at the file. Walk the gaps the yaml
+implies and offer to close each one (only act on a yes; these write to their account):
+- **App not on Codemagic yet** — if `list_applications` didn't show this repo, tell the user and offer
+  to add it with `add_application` (confirm the repo URL and which team).
+- **Missing variable groups / env vars** — for any group the yaml references that doesn't exist (or is
+  missing keys), offer to create it (`create_variable_group`) and upload the values. First **derive the
+  exact keys the build needs from the yaml you wrote** (each `groups:` it references and each
+  publishing/signing block implies specific keys — e.g. `google_play` ⇒ `GCLOUD_SERVICE_ACCOUNT_CREDENTIALS`,
+  the `envs` signing method ⇒ `CM_KEYSTORE*` / `CM_CERTIFICATE*`) and list them so the user knows what to
+  provide.
+- **Upload secrets via a file, never via chat.** Use `add_environment_variables(group_id, file_path=...)`:
+  ask the user to put the keys in a local dotenv file and give you its **path** — the server reads it; you
+  must NOT open, cat, or Read the file. File format, one `KEY=value` per line:
+  - `KEY=value` — a literal value (fine for non-secret config).
+  - `KEY=@path` — store the file's **raw text** (service-account JSON, `.p8` key, PEM).
+  - `KEY=@base64:path` — **base64-encode** the file (keystore, `.p12`, `.mobileprovision`); relative paths
+    resolve against the dotenv file. This is exactly what Codemagic expects for binary signing material.
+  Clearly non-secret values you already know can instead go inline via `variables={...}`.
+- After uploading, confirm which **keys** were set (never the values) and that they match what the yaml
+  references, then offer to delete the secrets file — so committing the yaml yields a green build.

@@ -1,6 +1,8 @@
 """Application tools — list apps and read one app's config."""
 
 import asyncio
+import base64
+from pathlib import Path
 from typing import Any
 
 from codemagic_mcp import transform
@@ -176,34 +178,99 @@ async def create_variable_group(
 
 @mcp.tool
 async def add_environment_variables(
-    group_id: str, variables: dict[str, str], secure: bool = True
+    group_id: str,
+    variables: dict[str, str] | None = None,
+    file_path: str | None = None,
+    secure: bool = True,
 ) -> dict[str, Any]:
-    """Add environment variables to an existing variable group.
+    """Add environment variables to an existing variable group, two ways.
 
-    Get group_id from list_variable_groups or create_variable_group. Variables are
-    added as a batch. This writes real values into the account.
+    Get group_id from list_variable_groups or create_variable_group. Provide EITHER
+    `variables` or `file_path` (not both). This writes real values into the account and
+    returns only the variable names that were set — never the values.
 
     Args:
         group_id: The variable group to add to.
-        variables: A name → value map. Values are sent to Codemagic and never returned.
+        variables: A name → value map, for values you already have and that are NOT
+                   secret (e.g. a track name, a region). The values pass through this
+                   call, so never use this for secrets.
+        file_path: Path to a local dotenv-style file the SERVER reads — use this for
+                   SECRETS so the values never enter the conversation. Do NOT open,
+                   cat, or Read this file yourself; just pass its path. Each line is
+                   `KEY=value`; `#` comments and blanks are ignored. A value may be:
+                   `@path` (store the file's raw text — e.g. a service-account JSON or
+                   .p8 key) or `@base64:path` (base64-encode the file — e.g. a keystore,
+                   .p12, or .mobileprovision). Relative `@`/`@base64:` paths resolve
+                   against the dotenv file's directory.
         secure: Store as secured/encrypted (default true). Use false only for clearly
                 non-secret config values.
-
-    Returns only the variable names that were added — never the values.
     """
-    if not variables:
-        return {"error": "Provide at least one variable."}
+    if bool(variables) == bool(file_path):
+        return {"error": "Provide exactly one of variables or file_path."}
+
+    if variables:
+        items = [{"name": k, "value": v} for k, v in variables.items()]
+    else:
+        items_or_error = _items_from_env_file(file_path)
+        if isinstance(items_or_error, dict):
+            return items_or_error
+        items = items_or_error
+    if not items:
+        return {"error": "No variables to add."}
+
     try:
         client = CmApiClient(require_token())
     except AuthError as e:
         return no_token(e)
-    items = [{"name": k, "value": v} for k, v in variables.items()]
     try:
         await client.add_group_variables(group_id, items, secure=secure)
     except CmApiError as e:
         return {"error": e.message, "status_code": e.status_code, "group_id": group_id}
-    return {"added": True, "group_id": group_id, "secure": secure,
-            "variable_names": list(variables.keys())}
+
+    result = {"added": True, "group_id": group_id, "secure": secure,
+              "variable_names": [i["name"] for i in items]}
+    if file_path:
+        result["source_file"] = file_path
+        result["note"] = ("Values were read from the file by the server, not shown here. "
+                          "Offer to delete the file now that the secrets are uploaded.")
+    return result
+
+
+def _items_from_env_file(file_path: str) -> list[dict[str, str]] | dict[str, Any]:
+    """Read a dotenv file and resolve each assignment to {name, value}.
+
+    Returns an error dict on any failure. Resolves `@path` to the file's raw text and
+    `@base64:path` to base64 of its bytes, relative to the dotenv file's directory.
+    """
+    env_path = Path(file_path).expanduser()
+    if not env_path.is_file():
+        return {"error": f"File not found: {file_path}"}
+    try:
+        text = env_path.read_text(encoding="utf-8")
+    except OSError as e:
+        return {"error": f"Could not read {file_path}: {e}"}
+
+    items: list[dict[str, str]] = []
+    for a in transform.parse_env_assignments(text):
+        if a["mode"] == "literal":
+            items.append({"name": a["name"], "value": a["value"]})
+            continue
+        ref = Path(a["value"]).expanduser()
+        if not ref.is_absolute():
+            ref = env_path.parent / ref
+        if not ref.is_file():
+            return {"error": f"Referenced file not found for {a['name']}: {a['value']}"}
+        try:
+            if a["mode"] == "base64_file":
+                value = base64.b64encode(ref.read_bytes()).decode("ascii")
+            else:  # raw_file
+                value = ref.read_text(encoding="utf-8")
+        except OSError as e:
+            return {"error": f"Could not read referenced file for {a['name']}: {e}"}
+        items.append({"name": a["name"], "value": value})
+    if not items:
+        return {"error": f"No KEY=value assignments found in {file_path}."}
+    return items
 
 
 @mcp.tool

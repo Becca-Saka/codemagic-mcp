@@ -45,8 +45,10 @@ Map the existing config; do not invent or add settings that aren't there:
   found, ask the user which integration to use.
 - `environment_variables` (names/groups only) → `environment.groups` (and `vars` for clearly non-secret
   values). The actual secret values are **not** migrated. Offer to recreate the groups and add the
-  values for the user (`create_variable_group` + `add_environment_variables`, asking them for each secret
-  value) instead of leaving it all manual — only with their go-ahead, since it writes to the account.
+  values for the user (`create_variable_group` + `add_environment_variables`) instead of leaving it
+  manual — only with their go-ahead. For secrets, take them from a local dotenv file via
+  `add_environment_variables(group_id, file_path=...)` (the server reads it; don't open the file)
+  rather than asking the user to paste values into chat.
 
 ### 4. Ground, write, validate — follow `create_codemagic_yaml`
 From here, follow the `create_codemagic_yaml` playbook: pull `codemagic_yaml_reference(topic)` for each

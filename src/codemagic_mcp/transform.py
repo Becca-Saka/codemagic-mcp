@@ -272,6 +272,42 @@ def group_variables(payload: Any) -> list[dict[str, Any]]:
             for v in data or [] if isinstance(v, dict)]
 
 
+def parse_env_assignments(text: str) -> list[dict[str, Any]]:
+    """Parse dotenv-style text into [{name, value, mode}] — pure, no I/O.
+
+    One `KEY=value` per line; blank lines and `#` comments skipped; an optional
+    `export ` prefix and surrounding quotes are stripped. The value's `mode` tells the
+    caller how to resolve it (caller does the file reading, never this function):
+      - `@base64:path` → mode "base64_file"  (caller reads bytes, base64-encodes)
+      - `@path`        → mode "raw_file"      (caller reads the file's text verbatim)
+      - anything else  → mode "literal"       (use value as-is)
+    For file modes, `value` is the path; for literal, `value` is the literal string.
+    """
+    out: list[dict[str, Any]] = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        if s.startswith("export "):
+            s = s[len("export "):].lstrip()
+        if "=" not in s:
+            continue
+        name, _, value = s.partition("=")
+        name, value = name.strip(), value.strip()
+        if not name:
+            continue
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if value.startswith("@base64:"):
+            mode, value = "base64_file", value[len("@base64:"):]
+        elif value.startswith("@"):
+            mode, value = "raw_file", value[1:]
+        else:
+            mode = "literal"
+        out.append({"name": name, "value": value, "mode": mode})
+    return out
+
+
 def team_variable_groups(team_payload: Any) -> list[dict[str, Any]]:
     """Variable groups with their variable keys, from the legacy GET /team payload.
 
