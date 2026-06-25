@@ -32,10 +32,17 @@ class CmApiClient:
         return {"Content-Type": "application/json", "x-auth-token": self.api_key}
 
     async def _request(
-        self, method: str, url: str, *, params: dict[str, Any] | None = None
+        self,
+        method: str,
+        url: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
     ) -> Any:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.request(method, url, headers=self._headers(), params=params)
+            response = await client.request(
+                method, url, headers=self._headers(), params=params, json=json
+            )
             if response.status_code >= 400:
                 logger.warning(
                     "Codemagic API error | status=%d | url=%s",
@@ -65,6 +72,20 @@ class CmApiClient:
         """GET /apps/{app_id} (legacy) — full app config (workflows, scripts, signing)."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/apps/{app_id}")
 
+    async def add_application(self, body: dict[str, Any]) -> Any:
+        """POST /apps (legacy) — add an app from a repo whose provider is already
+        connected; body is {repositoryUrl, teamId?}. Returns the created app."""
+        return await self._request("POST", f"{LEGACY_BASE_URL}/apps", json=body)
+
+    async def add_application_private(self, body: dict[str, Any]) -> Any:
+        """POST /apps/new (legacy) — add an app from a private repo via an SSH key;
+        body is {repositoryUrl, sshKey:{data,passphrase}, projectType?, teamId?}."""
+        return await self._request("POST", f"{LEGACY_BASE_URL}/apps/new", json=body)
+
+    async def delete_application(self, app_id: str) -> Any:
+        """DELETE /apps/{app_id} (legacy) — permanently remove an app."""
+        return await self._request("DELETE", f"{LEGACY_BASE_URL}/apps/{app_id}")
+
     async def get_team(self, team_id: str) -> Any:
         """GET /team/{team_id} (legacy) — team config incl. signingFiles + integrations."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/team/{team_id}")
@@ -81,11 +102,90 @@ class CmApiClient:
             "GET", f"{V3_BASE_URL}/teams/{team_id}/variable-groups", params={"page_size": 100}
         )
 
+    async def create_app_variable_group(self, app_id: str, name: str) -> Any:
+        """POST /apps/{app_id}/variable-groups (v3) — create a group; body {name}."""
+        return await self._request(
+            "POST", f"{V3_BASE_URL}/apps/{app_id}/variable-groups", json={"name": name}
+        )
+
+    async def create_team_variable_group(
+        self, team_id: str, name: str, *, selected_apps: list[str] | None = None
+    ) -> Any:
+        """POST /teams/{team_id}/variable-groups (v3) — create a team group.
+
+        advanced_security limits which apps can read the group; disabled by default."""
+        body = {
+            "name": name,
+            "advanced_security": {
+                "enabled": bool(selected_apps),
+                "selected_apps": selected_apps or [],
+            },
+        }
+        return await self._request(
+            "POST", f"{V3_BASE_URL}/teams/{team_id}/variable-groups", json=body
+        )
+
+    async def add_group_variables(
+        self, group_id: str, variables: list[dict[str, str]], *, secure: bool
+    ) -> Any:
+        """POST /variable-groups/{group_id}/variables (v3) — bulk-add variables;
+        body {secure, variables:[{name,value}]}."""
+        return await self._request(
+            "POST",
+            f"{V3_BASE_URL}/variable-groups/{group_id}/variables",
+            json={"secure": secure, "variables": variables},
+        )
+
+    async def update_variable_group(self, group_id: str, body: dict[str, Any]) -> Any:
+        """PATCH /variable-groups/{group_id} (v3) — rename / change advanced security."""
+        return await self._request(
+            "PATCH", f"{V3_BASE_URL}/variable-groups/{group_id}", json=body
+        )
+
+    async def delete_variable_group(self, group_id: str) -> Any:
+        """DELETE /variable-groups/{group_id} (v3) — remove a group and its variables."""
+        return await self._request("DELETE", f"{V3_BASE_URL}/variable-groups/{group_id}")
+
+    async def update_group_variable(
+        self, group_id: str, variable_id: str, body: dict[str, Any]
+    ) -> Any:
+        """PATCH /variable-groups/{group_id}/variables/{variable_id} (v3) —
+        change a variable's name/value/secure flag."""
+        return await self._request(
+            "PATCH",
+            f"{V3_BASE_URL}/variable-groups/{group_id}/variables/{variable_id}",
+            json=body,
+        )
+
+    async def delete_group_variable(self, group_id: str, variable_id: str) -> Any:
+        """DELETE /variable-groups/{group_id}/variables/{variable_id} (v3)."""
+        return await self._request(
+            "DELETE", f"{V3_BASE_URL}/variable-groups/{group_id}/variables/{variable_id}"
+        )
+
     async def list_group_variables(self, group_id: str) -> Any:
         """GET /variable-groups/{group_id}/variables (v3) — variable names in a group."""
         return await self._request(
             "GET", f"{V3_BASE_URL}/variable-groups/{group_id}/variables", params={"page_size": 100}
         )
+
+    async def start_build(self, body: dict[str, Any]) -> Any:
+        """POST /builds (legacy) — trigger a build; returns {buildId}."""
+        return await self._request("POST", f"{LEGACY_BASE_URL}/builds", json=body)
+
+    async def cancel_build(self, build_id: str) -> int:
+        """POST /builds/{build_id}/cancel (legacy) — cancel a running build.
+
+        Returns the HTTP status: 200 cancelled, 208 the build had already finished."""
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            response = await client.post(
+                f"{LEGACY_BASE_URL}/builds/{build_id}/cancel", headers=self._headers()
+            )
+            if response.status_code >= 400:
+                logger.warning("Codemagic API error | status=%d | url=%s",
+                               response.status_code, str(response.url))
+                raise CmApiError(response.status_code, response.text)
+            return response.status_code
 
     async def get_step_log(self, log_url: str) -> str:
         """Fetch a build step's raw log text from its (absolute) logUrl."""

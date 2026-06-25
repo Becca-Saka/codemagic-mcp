@@ -11,6 +11,7 @@ YAML_REFERENCES = (
     "publishing",
     "triggering",
     "ota-updates",
+    "flavors",
 )
 
 

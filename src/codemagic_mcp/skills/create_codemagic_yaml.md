@@ -24,24 +24,62 @@ infer. Never ask for something the project files already tell you.
 - **Platforms** — from which native folders exist (`android/`, `ios/`, `macos/`, `web/`, `windows/`).
 - **Identifiers** — Android package name from `android/app/build.gradle(.kts)`; iOS/macOS bundle id and
   Xcode scheme from `ios/Runner.xcodeproj/project.pbxproj`, `*.xcscheme`, or `Info.plist`.
+- **Flavors / build variants — you MUST actively check, never assume "none".** Variants change the build
+  command and identifiers and usually mean one workflow each, so missing them produces a wrong config.
+  Run the actual detection before writing anything — don't just read about it:
+  - Android: `grep -n "productFlavors\|flavorDimensions" android/app/build.gradle*` — any match ⇒ flavors.
+  - iOS/macOS: `ls ios/*.xcodeproj/xcshareddata/xcschemes/ macos/*.xcodeproj/xcshareddata/xcschemes/`
+    — more than the one default scheme ⇒ variants.
+  - Flutter: also `grep -rn "\-\-flavor" .` and check for `flutter_flavorizr` in `pubspec.yaml` and
+    `lib/main_*.dart` / `lib/flavors.dart`.
+  State what you found ("flavors: dev, prod" or "no flavors detected") so it's explicit. If variants
+  exist, ask the user which to build and make a workflow per chosen flavor; pull
+  `codemagic_yaml_reference("flavors")` for the other project types and the per-flavor command/signing
+  details. Only treat the project as single-flavor after the checks above come back empty.
 - **Default branch / monorepo path** — from git and the project layout.
 
-Confirm a detected value only if it's ambiguous (e.g. multiple schemes or flavors); otherwise use it.
+Confirm a detected value only if it's ambiguous (e.g. multiple schemes/flavors and it's unclear which to
+build, or which bundle id / package name pairs with each); otherwise use it. When several flavors exist,
+ask which to build (one, several, or all) — see the `flavors` reference.
 
-**Ask the user (decisions/secrets you can't infer):**
-- **Signing** — iOS/macOS: `automatic` (App Store Connect integration), `codemagic-managed` (certs
-  uploaded in the Codemagic UI), `manual` (env var groups), or none. Android: keystore (env var group)
-  or none. If you know the team id, call `get_team_signing(team_id)` first: when a matching, valid
-  profile/certificate is already uploaded (check its `bundle_id` and `distribution_type`), reference it
-  by `reference_name` and just confirm the method — don't ask the user to set up signing from scratch.
+**Look up real values from the account before asking (and never guess them):**
+Several fields must be exact strings that exist in the user's Codemagic account — an integration
+name, a variable group name, a signing `reference_name`. Do not invent these and do not leave a
+`<placeholder>` for them when a tool can return the real value:
+- `get_team_integrations(team_id)` — real App Store Connect / Partner Center **integration names**
+  and tester group names (for `integrations:` / `app_store_connect:` and tester distribution).
+- `list_variable_groups(app_id | team_id)` — real environment variable **group names** (and the keys
+  inside them) to reference for secrets.
+- `get_team_signing(team_id)` — uploaded certs/profiles to reference by `reference_name`.
+
+If a needed value isn't found by a tool, **ask the user for it** — don't substitute a placeholder.
+
+**You can also create the env setup, not just reference it.** If the yaml needs a variable group that
+doesn't exist yet, offer to create it and populate it instead of sending the user to the UI:
+- `create_variable_group(name, app_id | team_id)` — make the group the yaml references.
+- `add_environment_variables(group_id, {NAME: value}, secure=True)` — add the variables (values are
+  sent to Codemagic, never echoed). Ask the user for the secret values; add them as `secure`.
+Only do this with the user's go-ahead (it writes to their account), and prefer an existing group when
+`list_variable_groups` already returns a suitable one.
+
+**Ask the user (decisions/secrets you can't infer or look up):**
+- **Signing** — iOS/macOS has three methods (pick one): **ASC** (automatic — App Store Connect API
+  integration fetches certs/profiles), **upload** (certs/profiles uploaded to Codemagic, referenced by
+  name), or **envs** (base64 `.p12`/profile in a secure env var group); or none. Android: keystore
+  (env var group / uploaded) or none. Call `get_team_signing(team_id)` first: when a matching, valid
+  profile/certificate is already uploaded (check its `bundle_id` and `distribution_type`), prefer the
+  **upload** method and reference it by `reference_name` — don't ask the user to set up signing from scratch.
   Before writing any signing block, pull `codemagic_yaml_reference("code-signing")` — signing has strict
   rules (e.g. never mix the `ios_signing` block with the App Store Connect integration method).
 - **Distribution** — App Store Connect / Google Play (which track), Firebase App Distribution, email
-  artifact, or none.
-- **Triggering** — events (push, pull_request, tag, or manual only) and which branches.
+  artifact, or none. For App Store Connect, confirm the exact **integration name** from
+  `get_team_integrations`; if missing, ask — never invent it.
+- **Triggering** — events (push, pull_request, tag, or manual only) and which branches. If they want
+  tag builds, **ask for the actual tag pattern** (e.g. `v*`, `release-*`) — don't default to a guess.
 - **Build versioning** — auto-version store uploads, and the strategy.
 - **Notifications** — email addresses, Slack channel.
-- **Workflows** — one combined workflow, or one per target.
+- **Workflows / flavors** — one combined workflow, or one per target; and if the flavor check above found
+  variants, which flavor(s) to build. Include this in the same question round.
 
 Batch the questions you do need into one concise round — don't interrogate field by field.
 
@@ -75,6 +113,7 @@ the Codemagic-specific patterns rather than working from memory:
 - `publishing` — App Store Connect, Google Play, Firebase, email/Slack.
 - `triggering` — events, branch/tag patterns, cancel-previous.
 - `ota-updates` — Shorebird (Flutter) and CodePush (React Native) over-the-air patches.
+- `flavors` — detecting build variants per project type and writing one workflow per flavor.
 
 ### 4. Validate — always
 - Call `validate_codemagic_yaml` on the full content.
@@ -83,7 +122,12 @@ the Codemagic-specific patterns rather than working from memory:
 
 ### 5. Present
 - Show the final, validated yaml.
-- Call out every placeholder the user must fill — environment variable group names, integration names,
-  identifiers — and where to set them in Codemagic (Team/App settings → environment variables /
-  integrations).
+- It should contain **real values, not placeholders** — by this point integration names, group names,
+  signing reference names, identifiers, and tag patterns should be the actual ones you looked up via
+  tools or got from the user. A `<placeholder>` is only acceptable for a value no tool exposes and the
+  user genuinely hasn't decided yet; if any remain, list each one and where to set it in Codemagic
+  (Team/App settings → environment variables / integrations), and offer to fill it once they provide it.
+- For any variable **group** the yaml references that doesn't exist yet, offer to create it and add the
+  variables now (`create_variable_group` + `add_environment_variables`) rather than only pointing at the
+  UI — so the build is runnable when they commit.
 - Keep it conversational: briefly explain the key choices, no walls of text.

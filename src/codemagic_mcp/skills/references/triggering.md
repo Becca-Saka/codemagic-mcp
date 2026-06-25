@@ -21,6 +21,9 @@ triggering:
 ```
 
 - Events: `push`, `pull_request`, `pull_request_labeled`, `tag`.
+- `branch_patterns` / `tag_patterns` are project-specific — **ask the user for the actual branches and
+  tag pattern** they release from (e.g. `v*`, `release-*`). The `'main'`/`'v*'` values above are
+  examples, not defaults; don't ship them as guesses.
 - `cancel_previous_builds: true` cancels queued builds for the same branch on a new commit.
 - `triggering` usually differs per workflow — don't share it via an anchor.
 - A webhook must be configured for the repository (Codemagic does this when the app is connected).

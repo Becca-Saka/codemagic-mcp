@@ -75,6 +75,79 @@ async def get_build_step_logs(build_id: str, step_ids: list[str] | None = None) 
 
 
 @mcp.tool
+async def start_build(
+    app_id: str,
+    workflow_id: str,
+    branch: str | None = None,
+    tag: str | None = None,
+    variable_groups: list[str] | None = None,
+    variables: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Trigger a new Codemagic build. This starts a real build (consumes build minutes).
+
+    Confirm the app, workflow, and branch/tag with the user before calling — this has
+    side effects. Get app_id and the workflow ids from get_application or
+    list_applications; pass real variable group names from list_variable_groups.
+
+    Args:
+        app_id: The app to build.
+        workflow_id: The workflow id (as defined in the app's config / codemagic.yaml).
+        branch: Branch to build. Provide either branch or tag.
+        tag: Git tag to build. Provide either branch or tag.
+        variable_groups: Names of existing variable groups to attach.
+        variables: Inline build-time variables (key/value). Avoid putting secrets here;
+                   prefer variable groups.
+    """
+    if not branch and not tag:
+        return {"error": "Provide a branch or a tag to build."}
+    try:
+        client = CmApiClient(require_token())
+    except AuthError as e:
+        return no_token(e)
+
+    body: dict[str, Any] = {"appId": app_id, "workflowId": workflow_id}
+    if branch:
+        body["branch"] = branch
+    if tag:
+        body["tag"] = tag
+    environment: dict[str, Any] = {}
+    if variable_groups:
+        environment["groups"] = variable_groups
+    if variables:
+        environment["variables"] = variables
+    if environment:
+        body["environment"] = environment
+
+    try:
+        result = await client.start_build(body)
+    except CmApiError as e:
+        return {"error": e.message, "status_code": e.status_code, "app_id": app_id}
+    build_id = result.get("buildId") if isinstance(result, dict) else None
+    return {"started": True, "build_id": build_id, "workflow_id": workflow_id}
+
+
+@mcp.tool
+async def cancel_build(build_id: str) -> dict[str, Any]:
+    """Cancel a running Codemagic build.
+
+    Confirm the build id with the user before calling — this stops an in-progress
+    build. Use get_build_info or list_team_builds to find the build id.
+    """
+    try:
+        client = CmApiClient(require_token())
+    except AuthError as e:
+        return no_token(e)
+    try:
+        status = await client.cancel_build(build_id)
+    except CmApiError as e:
+        return {"error": e.message, "status_code": e.status_code, "build_id": build_id}
+    if status == 208:
+        return {"cancelled": False, "build_id": build_id,
+                "note": "The build had already finished — nothing to cancel."}
+    return {"cancelled": True, "build_id": build_id}
+
+
+@mcp.tool
 async def list_team_builds(team_id: str | None = None, limit: int = 10) -> dict[str, Any]:
     """List recent builds for a Codemagic team.
 

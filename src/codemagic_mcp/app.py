@@ -19,7 +19,18 @@ they carry Codemagic-specific rules and grounding you would otherwise get wrong:
   `codemagic_yaml_reference(topic)` for area-specific patterns, and ALWAYS run
   `validate_codemagic_yaml` before presenting the yaml.
 
-Do not diagnose a build failure or write a codemagic.yaml from memory without these.\
+Do not diagnose a build failure or write a codemagic.yaml from memory without these.
+
+`start_build` and `cancel_build` have real side effects (a build consumes build
+minutes; a cancel stops an in-progress build). Confirm the app, workflow, and
+branch/tag — or the build id — with the user before calling either.
+
+Several tools mutate the account: `add_application`, `create_variable_group`,
+`add_environment_variables`, `update_environment_variable`, `update_variable_group`.
+And these are DESTRUCTIVE and irreversible: `delete_application` (removes an app and
+its build history), `delete_variable_group` (removes a group and every variable in
+it), `delete_environment_variable`. Always confirm the exact target with the user
+before calling any delete, and never delete something the user did not name.\
 """
 
 mcp = FastMCP("codemagic", instructions=INSTRUCTIONS)

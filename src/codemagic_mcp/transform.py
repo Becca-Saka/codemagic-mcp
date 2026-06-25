@@ -264,9 +264,11 @@ def variable_groups(payload: Any) -> list[dict[str, Any]]:
 
 
 def group_variables(payload: Any) -> list[dict[str, Any]]:
-    """[{name, secure}] from a v3 group-variables payload (keys only, no values)."""
+    """[{id, name, secure}] from a v3 group-variables payload (keys only, no values).
+
+    The id is the variable handle for update_environment_variable / delete."""
     data = payload.get("data", payload) if isinstance(payload, dict) else payload
-    return [{"name": v.get("name"), "secure": v.get("secure")}
+    return [{"id": v.get("id"), "name": v.get("name"), "secure": v.get("secure")}
             for v in data or [] if isinstance(v, dict)]
 
 

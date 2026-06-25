@@ -10,43 +10,117 @@ Distribution types: `app_store` (App Store / TestFlight) · `ad_hoc` (Firebase /
 `development` · `enterprise`. CLI `--type` equivalents: `IOS_APP_STORE`, `IOS_APP_ADHOC`,
 `IOS_APP_DEVELOPMENT`, `IOS_IN_HOUSE`.
 
-## iOS — pick ONE method
+## iOS — pick ONE of three methods
 
-### automatic — App Store Connect API integration (recommended)
-Codemagic fetches/creates certs + profiles from Apple at build time.
-- Needs: an App Store Connect key added under **Team Settings → Integrations → Developer Portal**, and a
-  `CERTIFICATE_PRIVATE_KEY` secret (generate: `ssh-keygen -t rsa -b 2048 -m PEM -f key -q -N ""`).
-- **DO NOT add an `environment: ios_signing:` block** for this method — that block is only for
-  codemagic-managed; mixing them fails the build.
+All three end with `xcode-project use-profiles` (sets the signing settings on the Xcode project before
+the build). They differ in *where the certificate + profile come from*.
+
+### 1. ASC — automatic, App Store Connect API integration (recommended)
+Codemagic fetches (or creates) the certs + profiles from Apple at build time using an App Store Connect
+API key, driven by the `app-store-connect` CLI in scripts.
+- Needs: an App Store Connect key added under **Team Settings → Integrations → Developer Portal /
+  App Store Connect**, referenced by the workflow-level `integrations: app_store_connect: <key_name>`.
+- **When using ASC automatic signing there must be NO `ios_signing` block** — the two must not be
+  combined for signing. (An `app_store_connect` integration may otherwise coexist with `ios_signing`,
+  e.g. when the integration is only used for publishing — just not to drive signing.)
 ```yaml
-environment:
-  groups: [code-signing]          # holds CERTIFICATE_PRIVATE_KEY
-integrations:
-  app_store_connect: <key_name>   # must match the Team Settings key name
+integrations:                              # workflow-level key, SIBLING of environment (not nested)
+  app_store_connect: <key_name>            # must match the Team Settings key name
 scripts:
-  - script: keychain initialize
-  - script: app-store-connect fetch-signing-files "$(xcode-project detect-bundle-id)" --type IOS_APP_STORE --create
-  - script: keychain add-certificates
-  - script: xcode-project use-profiles
+  - name: Set up keychain to be used for code signing using Codemagic CLI 'keychain' command
+    script: keychain initialize
+  - name: Fetch signing files
+    script: | 
+      app-store-connect fetch-signing-files "$BUNDLE_ID" \
+        --type IOS_APP_STORE \
+        --create
+  - name: Set up signing certificate
+    script: keychain add-certificates
+  - name: Set up code signing settings on Xcode project
+    script: xcode-project use-profiles
 ```
+- `--type`: `IOS_APP_STORE` | `IOS_APP_ADHOC` | `IOS_APP_DEVELOPMENT` | `IOS_IN_HOUSE`; `--create` lets
+  Codemagic create a missing profile. Fetching by bundle id also pulls extension profiles.
 
-### codemagic-managed — certs/profiles uploaded in the Codemagic UI
-Uses the `ios_signing` block; Codemagic injects the matching uploaded files.
+### 2. Upload — certs/profiles uploaded to Codemagic, via the `ios_signing` block
+You upload the `.p12` certificate and `.mobileprovision` profile in the Codemagic UI, then point the
+`ios_signing` block at them — either by explicit **reference name**, or by letting Codemagic auto-match
+on `distribution_type` + `bundle_identifier`. This is the only method that uses `ios_signing`.
 ```yaml
 environment:
   ios_signing:
-    distribution_type: app_store
-    bundle_identifier: com.example.app   # must EXACTLY match the app's real bundle id
+    provisioning_profiles:
+      - profile: <profile_reference>       # name from the UI upload / get_team_signing
+    certificates:
+      - certificate: <certificate_reference>
+scripts:
+  - script: xcode-project use-profiles
 ```
-- **DON'T** also set `provisioning_profiles:`/`certificates:` here — using `distribution_type`/
-  `bundle_identifier` (auto-match) together with explicit references is not allowed.
-- A defined bundle id also fetches extension profiles (e.g. `com.example.app.NotificationService`).
+- Auto-match alternative (instead of the explicit lists above):
+  ```yaml
+  environment:
+    ios_signing:
+      distribution_type: app_store         # app_store | ad_hoc | development | enterprise
+      bundle_identifier: com.example.app   # must EXACTLY match the app's real bundle id
+  ```
+- Use `get_team_signing(team_id)` to find the uploaded `reference_name`s and confirm the profile's
+  `bundle_id` / `distribution_type` matches the app.
+- **Within `ios_signing`, the two forms are mutually exclusive**: don't combine
+  `provisioning_profiles`/`certificates` (explicit) with `distribution_type`/`bundle_identifier`
+  (auto-match) in the same block.
 
-### manual — base64 env vars
-Secrets in a group (e.g. `appstore_credentials`): `CM_CERTIFICATE` (base64 `.p12`),
-`CM_CERTIFICATE_PASSWORD` (if set), `CM_PROVISIONING_PROFILE` (base64 `.mobileprovision`). Scripts:
-`keychain initialize` → write the profile to `~/Library/MobileDevice/Provisioning Profiles` →
-`keychain add-certificates` → `xcode-project use-profiles`.
+### 3. Envs — manual, base64 in environment variables (no ASC key needed)
+You obtain and maintain the files yourself; store them base64-encoded as secrets in a group. Exact var
+names Codemagic expects: `CM_CERTIFICATE` (base64 `.p12`), `CM_CERTIFICATE_PASSWORD` (if the cert is
+password-protected), `CM_PROVISIONING_PROFILE` (base64 `.mobileprovision`).
+```yaml
+scripts:
+  - name: Set up keychain to be used for code signing using Codemagic CLI 'keychain' command
+    script: keychain initialize
+  - name: Set up provisioning profiles from environment variables
+    script: | 
+        PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+        mkdir -p "$PROFILES_HOME"
+        PROFILE_PATH="$(mktemp "$PROFILES_HOME"/$(uuidgen).mobileprovision)"
+        echo ${CM_PROVISIONING_PROFILE} | base64 --decode > "$PROFILE_PATH"
+        echo "Saved provisioning profile $PROFILE_PATH"
+  - name: Set up signing certificate
+    script: | 
+        echo $CM_CERTIFICATE | base64 --decode > /tmp/certificate.p12
+        if [ -z ${CM_CERTIFICATE_PASSWORD+x} ]; then
+            # when using a certificate that is not password-protected
+            keychain add-certificates --certificate /tmp/certificate.p12
+        else
+            # when using a password-protected certificate
+            keychain add-certificates --certificate /tmp/certificate.p12 --certificate-password $CM_CERTIFICATE_PASSWORD
+        fi
+  - name: Set up code signing settings on Xcode project
+    script: xcode-project use-profiles
+```
+- No `ios_signing` block and no App Store Connect integration for this method. Put `CM_CERTIFICATE`,
+  `CM_CERTIFICATE_PASSWORD`, `CM_PROVISIONING_PROFILE` in a secure env var group referenced by the workflow.
+
+**Multiple provisioning profiles** (e.g. app extensions such as Notification Service): add each profile
+as its own env var with a `CM_PROVISIONING_PROFILE_*` naming convention (e.g.
+`CM_PROVISIONING_PROFILE_BASE`, `CM_PROVISIONING_PROFILE_NOTIFICATIONSERVICE`) in a group, then loop:
+```yaml
+environment:
+  groups:
+    - provisioning_profiles
+
+# ...
+
+scripts:
+  - name: Set up Provisioning profiles from environment variables
+    script: | 
+      PROFILES_HOME="$HOME/Library/MobileDevice/Provisioning Profiles"
+      mkdir -p "$PROFILES_HOME"
+      for profile in "${!CM_PROVISIONING_PROFILE_@}"; do
+        PROFILE_PATH="$(mktemp "$HOME/Library/MobileDevice/Provisioning Profiles"/ios_$(uuidgen).mobileprovision)"
+        echo ${!profile} | base64 --decode > "$PROFILE_PATH"
+        echo "Saved provisioning profile $PROFILE_PATH"
+      done
+```
 
 **iOS do's & don'ts**
 - DO run `xcode-project use-profiles` before the build; place signing scripts after dependency install.

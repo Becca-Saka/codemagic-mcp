@@ -4,7 +4,7 @@ from codemagic_mcp.app import mcp
 from codemagic_mcp.prompts import load_skill
 
 
-@mcp.tool
+@mcp.tool(output_schema=None)
 async def diagnose_build_failure() -> str:
     """REQUIRED FIRST STEP for any failed-build question. Get the diagnosis playbook.
 

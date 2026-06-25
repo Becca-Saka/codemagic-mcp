@@ -10,7 +10,7 @@ from codemagic_mcp.prompts import YAML_REFERENCES, load_reference, load_skill
 from codemagic_mcp.schema import load_schema
 
 
-@mcp.tool
+@mcp.tool(output_schema=None)
 async def create_codemagic_yaml() -> str:
     """REQUIRED FIRST STEP before writing any codemagic.yaml. Get the authoring playbook.
 
@@ -25,7 +25,7 @@ async def create_codemagic_yaml() -> str:
     return load_skill("create_codemagic_yaml")
 
 
-@mcp.tool
+@mcp.tool(output_schema=None)
 async def migrate_ui_to_yaml() -> str:
     """REQUIRED FIRST STEP before migrating a Workflow Editor app to codemagic.yaml.
 
@@ -38,14 +38,14 @@ async def migrate_ui_to_yaml() -> str:
     return load_skill("migrate_ui_to_yaml")
 
 
-@mcp.tool
+@mcp.tool(output_schema=None)
 async def codemagic_yaml_reference(topic: str) -> str:
     """Get detailed reference notes for one part of a codemagic.yaml.
 
     Call this while writing a codemagic.yaml to get the Codemagic-specific patterns
     for an area before writing that section. Topics: definitions-and-anchors,
     build-versioning, environment-and-cache, code-signing, publishing, triggering,
-    ota-updates.
+    ota-updates, flavors.
     """
     try:
         return load_reference(topic)

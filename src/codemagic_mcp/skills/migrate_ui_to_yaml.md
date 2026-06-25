@@ -32,14 +32,21 @@ Map the existing config; do not invent or add settings that aren't there:
 - `scripts` (the `customScripts` map: `postClone`, `preBuild`, `postBuild`, `preTest`, `postTest`,
   `prePublish`, `postPublish`) → the `scripts` list **in that order**, preserving each script's content.
   Use `build_settings.target` / `projectFile` / `flutterMode` to form the build command.
+- **Flavor / scheme** — if `build_settings` carries a flavor or Xcode scheme (or the app has a workflow
+  per variant), preserve it in the build command and keep one workflow per flavor. Pull
+  `codemagic_yaml_reference("flavors")` if you need the per-project-type specifics.
 - `code_signing` → the signing setup. For `android.enabled`, wire a keystore via an env var group; for
   `ios.bundle_id`, set up iOS signing. Call `get_team_signing(team_id)` to find the matching uploaded
   profile/certificate and reference it by `reference_name`.
 - `publishers` → `publishing`: `email.recipients` → email; `googlePlay` (track) → `google_play`;
   `appStoreConnect` → `app_store_connect`; `firebase` → `firebase`. Credentials are secrets — reference
-  env var groups, never values.
+  env var groups, never values. For the App Store Connect / Partner Center **integration name**, take the
+  real name from `get_team_integrations(team_id)` — don't invent it or leave a placeholder; if it isn't
+  found, ask the user which integration to use.
 - `environment_variables` (names/groups only) → `environment.groups` (and `vars` for clearly non-secret
-  values). The actual secret values are **not** migrated — the user re-enters them in Codemagic.
+  values). The actual secret values are **not** migrated. Offer to recreate the groups and add the
+  values for the user (`create_variable_group` + `add_environment_variables`, asking them for each secret
+  value) instead of leaving it all manual — only with their go-ahead, since it writes to the account.
 
 ### 4. Ground, write, validate — follow `create_codemagic_yaml`
 From here, follow the `create_codemagic_yaml` playbook: pull `codemagic_yaml_reference(topic)` for each
@@ -49,6 +56,9 @@ sample projects, and **always** run `validate_codemagic_yaml`, fixing until vali
 
 ### 5. Present
 - Show the validated yaml.
-- List what the user must still do: set the secret env var **values** (not migrated), confirm
-  integration/group names, and switch the app to use the `codemagic.yaml` once it's committed.
+- The yaml should carry **real** integration names, group names, signing reference names, identifiers,
+  and tag/branch patterns — looked up via tools or confirmed with the user, not placeholders.
+- List what the user must still do: set the secret env var **values** (not migrated) — or offer to add
+  them now via `create_variable_group` / `add_environment_variables` — and switch the app to use the
+  `codemagic.yaml` once it's committed.
 - Flag any UI setting that has no direct yaml equivalent rather than silently dropping it.
