@@ -204,3 +204,36 @@ class CmApiClient:
             f"{V3_BASE_URL}/teams/{team_id}/builds",
             params={"page_size": limit},
         )
+
+    async def create_public_artifact_url(self, artifact_url: str, expires_at: int) -> Any:
+        """POST {artifact_url}/public-url (legacy) — mint a token-free shareable link.
+
+        artifact_url is an artefact's `url` from a build (the /artifacts/{secureFilename}
+        endpoint); expires_at is a UNIX timestamp (seconds). Returns {url, expiresAt}."""
+        return await self._request(
+            "POST", f"{artifact_url}/public-url", json={"expiresAt": expires_at}
+        )
+
+    async def list_caches(self, app_id: str) -> Any:
+        """GET /apps/{app_id}/caches (legacy) — cache entries for an app."""
+        return await self._request("GET", f"{LEGACY_BASE_URL}/apps/{app_id}/caches")
+
+    async def clear_caches(self, app_id: str) -> Any:
+        """DELETE /apps/{app_id}/caches (legacy) — remove ALL caches for an app."""
+        return await self._request("DELETE", f"{LEGACY_BASE_URL}/apps/{app_id}/caches")
+
+    async def delete_cache(self, app_id: str, cache_id: str) -> Any:
+        """DELETE /apps/{app_id}/caches/{cache_id} (legacy) — remove one cache."""
+        return await self._request(
+            "DELETE", f"{LEGACY_BASE_URL}/apps/{app_id}/caches/{cache_id}"
+        )
+
+    async def get_remote_access(self, build_id: str) -> Any:
+        """GET /builds/{build_id}/remote-access (v3) — SSH/VNC connection details.
+
+        Returns {ssh:{script_url}, vnc:{host,port,username,password}}. 400s with
+        'Remote access is not enabled for this build' unless it was turned on (the
+        'Enable SSH/VNC access' checkbox) when the build was started."""
+        return await self._request(
+            "GET", f"{V3_BASE_URL}/builds/{build_id}/remote-access"
+        )

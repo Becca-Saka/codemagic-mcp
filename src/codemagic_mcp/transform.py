@@ -46,6 +46,62 @@ def step_log_url(action: Any) -> str | None:
     return (failed or subs[0])["logUrl"]
 
 
+def artifacts_list(build: Any) -> list[dict[str, Any]]:
+    """Downloadable artifacts from a build object (Codemagic spells it 'artefacts').
+
+    Each artefact's `url` is the authenticated `/artifacts/{secureFilename}` endpoint
+    — pass it to create_public_artifact_url to mint a shareable, token-free link.
+    """
+    build = build if isinstance(build, dict) else {}
+    raw = build.get("artefacts") or build.get("artifacts") or []
+    out: list[dict[str, Any]] = []
+    for a in raw:
+        if not isinstance(a, dict):
+            continue
+        out.append({
+            "name": a.get("name"),
+            "type": a.get("type"),
+            "size_bytes": a.get("sizeInBytes") or a.get("size"),
+            "url": a.get("url"),
+        })
+    return out
+
+
+def caches_list(payload: Any) -> list[dict[str, Any]]:
+    """Cache entries from GET /apps/{id}/caches — id, size, workflow, age."""
+    items = payload.get("caches", payload) if isinstance(payload, dict) else payload
+    out: list[dict[str, Any]] = []
+    for c in items or []:
+        if not isinstance(c, dict):
+            continue
+        out.append({
+            "cache_id": c.get("_id") or c.get("id"),
+            "workflow_id": c.get("workflowId"),
+            "size_bytes": c.get("sizeInBytes") or c.get("size"),
+            "created_at": c.get("createdAt"),
+        })
+    return out
+
+
+def remote_access(payload: Any) -> dict[str, Any]:
+    """SSH/VNC connection details from GET /builds/{id}/remote-access.
+
+    Shape: {ssh:{script_url}, vnc:{host,port,username,password}} — possibly wrapped
+    in {data}. The VNC password is an ephemeral, build-scoped credential the user
+    needs to connect, so it is returned (not redacted)."""
+    data = payload.get("data", payload) if isinstance(payload, dict) else {}
+    data = data if isinstance(data, dict) else {}
+    ssh = data.get("ssh") or {}
+    vnc = data.get("vnc") or {}
+    return {
+        "ssh": {"script_url": ssh.get("script_url")} if ssh.get("script_url") else None,
+        "vnc": {
+            "host": vnc.get("host"), "port": vnc.get("port"),
+            "username": vnc.get("username"), "password": vnc.get("password"),
+        } if vnc.get("host") else None,
+    }
+
+
 def user_profile(user_payload: Any) -> dict[str, Any]:
     """{id, name, email} from the legacy GET /user payload."""
     user = user_payload.get("user", {}) if isinstance(user_payload, dict) else {}
@@ -114,6 +170,7 @@ def build_summary(build_payload: Any) -> dict[str, Any]:
              "log_url": step_log_url(a)}
             for a in actions
         ],
+        "artifacts": artifacts_list(build),
     }
 
 

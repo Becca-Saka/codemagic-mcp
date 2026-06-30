@@ -10,6 +10,11 @@ from codemagic_mcp.client import CmApiClient, CmApiError
 from codemagic_mcp.tools.common import no_token
 
 
+# Build tools use the legacy GET /builds/{id}, not v3, on purpose: only legacy
+# embeds buildActions[].logUrl (per-step log links — v3 has a /actions endpoint but
+# no log endpoint at all) plus the full application object (name/repo/team/workflow
+# names) and the canonical artifact `url`. v3 returns app_id only and a short-lived
+# signed artifact link. Revisit if/when v3 adds a step-logs endpoint.
 @mcp.tool
 async def get_build_info(build_id: str) -> dict[str, Any]:
     """Get a build's status, app/repo, commit, timing, and per-step status.

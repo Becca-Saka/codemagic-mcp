@@ -229,6 +229,34 @@ call `verify_connection` and return your user and teams. If it reports
 | `cancel_build` | Cancel a running Codemagic build. |
 | `diagnose_build_failure` | Required first step for any failed-build question — returns the diagnosis playbook. |
 
+### Artifacts
+
+| Tool | What it does |
+| --- | --- |
+| `create_public_artifact_url` | Mint a token-free, expiring share link for a build artifact (use the artifact `url` from `get_build_info`). |
+
+### Caches
+
+| Tool | What it does |
+| --- | --- |
+| `list_caches` | List an app's build caches (id, workflow, size, age). |
+| `clear_caches` | Delete **all** of an app's build caches. **Destructive.** |
+| `delete_cache` | Delete a single build cache by id. **Destructive.** |
+
+### Remote access
+
+Requires the "Enable SSH/VNC access" checkbox when the build was started (UI only,
+manual builds); credentials expire ~10 min after the build finishes.
+
+| Tool | What it does |
+| --- | --- |
+| `get_remote_access` | Get a build machine's SSH script URL and VNC host/port/username/password. |
+| `connect_remote_access` | Help you connect: the SSH command, or (for VNC) checks for a local VNC client and either gives the launch command or prompts you to install one. |
+
+SSH and VNC reach the **same** build VM, so you can use both at once — SSH for the
+terminal, VNC for the GUI. A GUI app you launch over SSH appears in the VNC session,
+e.g. `open -a Simulator` over SSH shows the Simulator window in VNC.
+
 ### codemagic.yaml authoring
 
 | Tool | What it does |
