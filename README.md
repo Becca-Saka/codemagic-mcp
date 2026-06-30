@@ -203,7 +203,7 @@ call `verify_connection` and return your user and teams. If it reports
 | --- | --- |
 | `list_applications` | List the Codemagic apps the token can access. |
 | `get_application` | Get one app's full config: workflows, scripts, build settings, signing, publishing. |
-| `add_application` | Add a new application to Codemagic from a git repository. |
+| `add_application` | Add a new application to Codemagic, cloning the repo over SSH (needs a base64 private key whose public key is a deploy key on the repo). |
 | `delete_application` | Permanently delete an application from Codemagic. |
 
 ### Environment variables

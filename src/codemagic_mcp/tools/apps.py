@@ -74,24 +74,27 @@ async def list_variable_groups(
 @mcp.tool
 async def add_application(
     repository_url: str,
+    ssh_key_base64: str,
+    ssh_key_passphrase: str | None = None,
     team_id: str | None = None,
     project_type: str | None = None,
-    ssh_key_base64: str | None = None,
-    ssh_key_passphrase: str | None = None,
 ) -> dict[str, Any]:
-    """Add a new application to Codemagic from a git repository.
+    """Add a new application to Codemagic, cloning the repo over SSH.
+
+    Codemagic authenticates the clone with the SSH key you pass, so add the matching
+    public key as a deploy key on the repository first. SSH is required: adding by URL
+    alone creates an unauthenticated "generic" repo whose builds fail at checkout, so
+    that path is intentionally not offered.
 
     This creates a real app in the user's account — confirm the repository URL (and
-    team) with the user before calling. The repository's git provider must already be
-    connected to the account; for a private repo not reachable that way, pass an SSH
-    key instead (ssh_key_base64 + optional ssh_key_passphrase).
+    team) with the user before calling.
 
     Args:
-        repository_url: SSH or HTTPS clone URL of the repository.
+        repository_url: SSH clone URL of the repo (e.g. git@github.com:owner/repo.git).
+        ssh_key_base64: Base64-encoded private key Codemagic uses to clone the repo.
+        ssh_key_passphrase: Passphrase for that key, if any.
         team_id: Team to add the app to. Omit to add it to the personal account.
         project_type: Optional hint, e.g. "flutter-app".
-        ssh_key_base64: Base64-encoded private key, only for a private repo added by key.
-        ssh_key_passphrase: Passphrase for that key, if any.
 
     The SSH key and passphrase are sent to Codemagic and never returned in the output.
     """
@@ -100,18 +103,17 @@ async def add_application(
     except AuthError as e:
         return no_token(e)
 
-    body: dict[str, Any] = {"repositoryUrl": repository_url}
+    body: dict[str, Any] = {
+        "repositoryUrl": repository_url,
+        "sshKey": {"data": ssh_key_base64, "passphrase": ssh_key_passphrase},
+    }
     if team_id:
         body["teamId"] = team_id
     if project_type:
         body["projectType"] = project_type
 
     try:
-        if ssh_key_base64:
-            body["sshKey"] = {"data": ssh_key_base64, "passphrase": ssh_key_passphrase}
-            payload = await client.add_application_private(body)
-        else:
-            payload = await client.add_application(body)
+        payload = await client.add_application_private(body)
     except CmApiError as e:
         return {"error": e.message, "status_code": e.status_code, "repository_url": repository_url}
 

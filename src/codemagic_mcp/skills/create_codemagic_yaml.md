@@ -187,7 +187,8 @@ the Codemagic-specific patterns rather than working from memory:
 **Then help the user make it actually runnable** — don't stop at the file. Walk the gaps the yaml
 implies and offer to close each one (only act on a yes; these write to their account):
 - **App not on Codemagic yet** — if `list_applications` didn't show this repo, tell the user and offer
-  to add it with `add_application` (confirm the repo URL and which team).
+  to add it with `add_application` (confirm the repo URL and which team). This clones over SSH, so it
+  needs a base64 private key whose public key is a deploy key on the repo.
 - **Missing variable groups / env vars** — for any group the yaml references that doesn't exist (or is
   missing keys), offer to create it (`create_variable_group`) and upload the values. First **derive the
   exact keys the build needs from the yaml you wrote** (each `groups:` it references and each

@@ -72,14 +72,11 @@ class CmApiClient:
         """GET /apps/{app_id} (legacy) — full app config (workflows, scripts, signing)."""
         return await self._request("GET", f"{LEGACY_BASE_URL}/apps/{app_id}")
 
-    async def add_application(self, body: dict[str, Any]) -> Any:
-        """POST /apps (legacy) — add an app from a repo whose provider is already
-        connected; body is {repositoryUrl, teamId?}. Returns the created app."""
-        return await self._request("POST", f"{LEGACY_BASE_URL}/apps", json=body)
-
     async def add_application_private(self, body: dict[str, Any]) -> Any:
-        """POST /apps/new (legacy) — add an app from a private repo via an SSH key;
-        body is {repositoryUrl, sshKey:{data,passphrase}, projectType?, teamId?}."""
+        """POST /apps/new (legacy) — add an app cloned over SSH; body is
+        {repositoryUrl, sshKey:{data,passphrase}, projectType?, teamId?}. The
+        URL-only POST /apps path is unused: it makes an unauthenticated "generic"
+        repo whose builds fail at checkout."""
         return await self._request("POST", f"{LEGACY_BASE_URL}/apps/new", json=body)
 
     async def delete_application(self, app_id: str) -> Any:
