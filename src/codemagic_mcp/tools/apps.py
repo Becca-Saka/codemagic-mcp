@@ -35,11 +35,13 @@ async def list_applications() -> dict[str, Any]:
 async def list_variable_groups(
     app_id: str | None = None, team_id: str | None = None, include_variables: bool = True
 ) -> dict[str, Any]:
-    """List environment variable groups (and their variable keys) for an app or team.
+    """List environment variable groups (and their variables) for an app or team.
 
-    Pass an app_id or a team_id. With include_variables (default), each group also
-    lists its variable keys (never the values) so you can reference real groups and
-    vars when writing a codemagic.yaml (secrets belong in groups).
+    Pass an app_id or a team_id. Each group carries its group_id. With
+    include_variables (default), each group also lists its variables as
+    {id, name, secure} — keys and ids only, never the values — so you can reference
+    real groups/vars when writing a codemagic.yaml, and feed group_id + a variable id
+    to update_environment_variable / delete_environment_variable.
     """
     if not app_id and not team_id:
         return {"error": "Provide app_id or team_id."}
@@ -50,22 +52,26 @@ async def list_variable_groups(
     scope = {"app_id": app_id} if app_id else {"team_id": team_id}
 
     try:
-        # Team route with keys: one legacy /team call carries all groups + variables.
-        if team_id and include_variables:
-            groups = transform.team_variable_groups(await client.get_team(team_id))
-        else:
+        try:
             payload = await (
                 client.list_app_variable_groups(app_id) if app_id
                 else client.list_team_variable_groups(team_id)
             )
-            groups = transform.variable_groups(payload)
-            if include_variables:  # app route: fetch each group's keys (v3, no values)
-                variable_lists = await asyncio.gather(
-                    *(client.list_group_variables(g["id"]) for g in groups)
-                )
-                for g, vars_payload in zip(groups, variable_lists):
-                    g["variables"] = transform.group_variables(vars_payload)
-                    g.pop("id", None)
+        except CmApiError as e:
+            # A personal account has no team-scoped variable groups; its team id 404s
+            # on the v3 groups endpoint. Treat that as "no groups", not an error.
+            if team_id and e.status_code == 404:
+                return {"count": 0, "variable_groups": [], **scope}
+            raise
+        groups = transform.variable_groups(payload)  # [{id, name}]
+        if include_variables:  # fetch each group's keys + ids (v3, no values)
+            variable_lists = await asyncio.gather(
+                *(client.list_group_variables(g["id"]) for g in groups)
+            )
+            for g, vars_payload in zip(groups, variable_lists):
+                g["variables"] = transform.group_variables(vars_payload)
+        for g in groups:  # update/delete need the group id alongside each variable id
+            g["group_id"] = g.pop("id")
     except CmApiError as e:
         return {"error": e.message, "status_code": e.status_code, **scope}
     return {"count": len(groups), "variable_groups": groups, **scope}
@@ -282,22 +288,41 @@ async def update_environment_variable(
     value: str | None = None,
     name: str | None = None,
     secure: bool | None = None,
+    file_path: str | None = None,
 ) -> dict[str, Any]:
     """Update a single environment variable's value, name, or secure flag.
 
-    Get group_id and variable_id from list_variable_groups (each variable carries its
-    id). Pass only the fields you want to change. The new value is sent to Codemagic
-    and never returned.
+    Get group_id and variable_id from list_variable_groups (each group carries its
+    group_id and each variable its id). Pass only the fields you want to change; the
+    new value is sent to Codemagic and never returned.
+
+    Set the value EITHER inline via `value` (non-secret only — it passes through this
+    call) OR via `file_path` for SECRETS: a dotenv-style file the SERVER reads (same
+    format as add_environment_variables) so the value never enters the conversation.
+    Do NOT open, cat, or Read that file yourself; just pass its path. It must hold
+    exactly one `KEY=value`; the value may be a literal, `@path` (raw file text), or
+    `@base64:path` (base64 of the file's bytes). The KEY is ignored — the variable is
+    identified by variable_id; use `name` to rename it.
     """
+    if value is not None and file_path is not None:
+        return {"error": "Provide value or file_path, not both."}
     body: dict[str, Any] = {}
-    if value is not None:
+    if file_path is not None:
+        items_or_error = _items_from_env_file(file_path)
+        if isinstance(items_or_error, dict):
+            return items_or_error
+        if len(items_or_error) != 1:
+            return {"error": f"Expected exactly one KEY=value in {file_path}, "
+                    f"found {len(items_or_error)}."}
+        body["value"] = items_or_error[0]["value"]
+    elif value is not None:
         body["value"] = value
     if name is not None:
         body["name"] = name
     if secure is not None:
         body["secure"] = secure
     if not body:
-        return {"error": "Provide at least one of value, name, or secure to change."}
+        return {"error": "Provide value, file_path, name, or secure to change."}
     try:
         client = CmApiClient(require_token())
     except AuthError as e:
@@ -306,8 +331,13 @@ async def update_environment_variable(
         await client.update_group_variable(group_id, variable_id, body)
     except CmApiError as e:
         return {"error": e.message, "status_code": e.status_code, "variable_id": variable_id}
-    return {"updated": True, "group_id": group_id, "variable_id": variable_id,
-            "changed": [k for k in body if k != "value"] + (["value"] if "value" in body else [])}
+    result = {"updated": True, "group_id": group_id, "variable_id": variable_id,
+              "changed": [k for k in body if k != "value"] + (["value"] if "value" in body else [])}
+    if file_path is not None:
+        result["source_file"] = file_path
+        result["note"] = ("Value was read from the file by the server, not shown here. "
+                          "Offer to delete the file now that the secret is uploaded.")
+    return result
 
 
 @mcp.tool

@@ -365,25 +365,6 @@ def parse_env_assignments(text: str) -> list[dict[str, Any]]:
     return out
 
 
-def team_variable_groups(team_payload: Any) -> list[dict[str, Any]]:
-    """Variable groups with their variable keys, from the legacy GET /team payload.
-
-    The team's environmentVariables block holds all groups + variables in one call.
-    Returns [{name, apps, variables: [{key, secure}]}] — keys only, never values.
-    """
-    team = team_payload.get("team", team_payload) if isinstance(team_payload, dict) else {}
-    env = team.get("environmentVariables") or {}
-    apps_by_group = env.get("apps") or {}
-    by_group: dict[str, list[dict[str, Any]]] = {}
-    for v in env.get("variables") or []:
-        if isinstance(v, dict) and v.get("group"):
-            by_group.setdefault(v["group"], []).append({"key": v.get("key"), "secure": v.get("secure")})
-    return [
-        {"name": g, "apps": apps_by_group.get(g, []), "variables": by_group.get(g, [])}
-        for g in env.get("groups") or []
-    ]
-
-
 def team_integrations(team_payload: Any) -> dict[str, Any]:
     """Configured integrations from the legacy GET /team payload (names only).
 
